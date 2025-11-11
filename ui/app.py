@@ -167,8 +167,13 @@ def main():  # pragma: no cover - placeholder only
             # Center column: Markdown/TXT/SRT selection + preview (tabbed)
             with gr.Column(scale=2):
                 gr.Markdown("### Preview")
+                # Get initial basenames and set default value to first item if available
+                initial_basenames = _list_basenames()
+                initial_value = initial_basenames[0] if initial_basenames else None
                 base_list = gr.Dropdown(
-                    choices=_list_basenames(), label="Select filename")
+                    choices=initial_basenames, 
+                    value=initial_value,
+                    label="Select filename")
                 # Download button for the whole folder
                 folder_download = gr.File(
                     label="Download Folder", visible=False, interactive=False)
@@ -334,6 +339,10 @@ def main():  # pragma: no cover - placeholder only
 
         base_list.change(_load_all_previews, inputs=base_list,
                          outputs=[md_preview, md_video, txt_code, srt_code, folder_download])
+
+        # Initialize preview on page load if there's a default selection
+        demo.load(_load_all_previews, inputs=base_list,
+                  outputs=[md_preview, md_video, txt_code, srt_code, folder_download])
 
         # Run pipeline for selected inputs only
         async def on_run(selected: List[str], prompt_variant: str, notes: str):
