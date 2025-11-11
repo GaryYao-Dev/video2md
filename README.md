@@ -64,6 +64,13 @@ The easiest way to use Video2MD is through the web interface:
    git clone https://github.com/your-username/video2md.git
    cd video2md
    uv sync
+
+   # Optional: Install GPU support for faster transcription (NVIDIA GPU required)
+   # Windows:
+   .\install_gpu.ps1
+   # Linux/macOS:
+   bash install_gpu.sh
+
    uv run python ui/app.py
    ```
 
@@ -226,6 +233,38 @@ For enhanced functionality, Video2MD can use:
 - **Node.js** (for additional MCP servers)
 - **OpenAI API key** (for transcription and summarization)
 - **Web search APIs** (Brave, Serper) for enhanced research
+- **GPU Support** (NVIDIA GPU with CUDA) - See GPU Installation below
+
+### GPU Installation (Optional, Recommended for Speed)
+
+For **7-8x faster transcription**, install GPU support if you have an NVIDIA GPU:
+
+**Automated Installation:**
+
+```bash
+# Windows
+.\install_gpu.ps1
+
+# Linux/macOS
+bash install_gpu.sh
+```
+
+**Manual Installation:**
+
+```bash
+# Check CUDA version
+nvcc --version
+
+# Install PyTorch with CUDA 12.x
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+# Verify GPU support
+uv run python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+```
+
+⚠️ **Important for repo cloners**: `uv sync` alone won't install GPU support. You must run the installation script or manual commands above after cloning.
+
+See [`docs/GPU_SUPPORT.md`](docs/GPU_SUPPORT.md) for detailed GPU setup instructions.
 
 ## 🎯 Use Cases
 

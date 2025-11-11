@@ -57,10 +57,15 @@ test = [
 ]
 gpu = [
     # For GPU acceleration with CUDA
-    # Install PyTorch with CUDA support:
-    # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-    # Or for CUDA 12.1:
-    # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+    # PyTorch with CUDA support must be installed separately due to special index URL requirement
+    # 
+    # For CUDA 12.x (12.4 and newer compatible, including 12.9):
+    # uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+    # 
+    # For CUDA 11.8:
+    # uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+    # 
+    # After installing PyTorch, faster-whisper will automatically use GPU if available
 ]
 mcp-servers = [
     # Preinstall these to avoid `uvx` resolving at runtime (Python 3.11+)

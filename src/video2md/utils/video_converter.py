@@ -10,8 +10,7 @@ from pathlib import Path
 from typing import Optional, Union
 import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Get logger (don't configure here, let the application configure it)
 logger = logging.getLogger(__name__)
 
 
@@ -115,6 +114,7 @@ class VideoConverter:
         # Build ffmpeg command
         cmd = [
             'ffmpeg',
+            '-loglevel', 'error',         # Only show errors to reduce output buffering issues
             '-y' if overwrite else '-n',  # Overwrite option
             '-i', str(input_path),        # Input file
             '-vn',                        # No video stream processing
@@ -129,12 +129,14 @@ class VideoConverter:
         logger.debug(f"FFmpeg command: {' '.join(cmd)}")
 
         try:
-            # Execute conversion
-            subprocess.run(
+            # Execute conversion with timeout (10 minutes should be enough for most files)
+            # Use DEVNULL to avoid buffering issues with stderr/stdout
+            result = subprocess.run(
                 cmd,
-                capture_output=True,
-                text=True,
-                check=True
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+                timeout=600  # 10 minutes timeout
             )
 
             # Check output file
@@ -145,8 +147,13 @@ class VideoConverter:
             logger.info(f"Conversion successful: {output_path}")
             return str(output_path)
 
+        except subprocess.TimeoutExpired as e:
+            error_msg = f"FFmpeg conversion timed out after 600 seconds"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
+
         except subprocess.CalledProcessError as e:
-            error_msg = f"FFmpeg conversion failed: {e.stderr}"
+            error_msg = f"FFmpeg conversion failed with exit code {e.returncode}"
             logger.error(error_msg)
             raise RuntimeError(error_msg) from e
 

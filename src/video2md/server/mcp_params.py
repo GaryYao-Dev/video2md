@@ -1,6 +1,7 @@
 import os
 import sys
 import shutil
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -11,11 +12,44 @@ def _bin_available(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
+def _get_python_executable() -> str:
+    """
+    Get the correct Python executable for the current environment.
+    Prefers uv virtual environment if available, otherwise uses sys.executable.
+    """
+    # Check if we're in a uv project (look for .venv in project root)
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent.parent.parent.parent  # Go up from src/video2md/server/mcp_params.py
+    
+    # Try Windows uv venv path
+    uv_venv_win = project_root / ".venv" / "Scripts" / "python.exe"
+    if uv_venv_win.exists():
+        return str(uv_venv_win)
+    
+    # Try Unix uv venv path
+    uv_venv_unix = project_root / ".venv" / "bin" / "python"
+    if uv_venv_unix.exists():
+        return str(uv_venv_unix)
+    
+    # Check VIRTUAL_ENV environment variable
+    venv_path = os.getenv("VIRTUAL_ENV")
+    if venv_path:
+        venv_python_win = Path(venv_path) / "Scripts" / "python.exe"
+        venv_python_unix = Path(venv_path) / "bin" / "python"
+        if venv_python_win.exists():
+            return str(venv_python_win)
+        if venv_python_unix.exists():
+            return str(venv_python_unix)
+    
+    # Fallback to current Python executable
+    return sys.executable
+
+
 # Whisper server parameters
 # Prefer running with the current Python interpreter so we don't trigger
 # on-demand installs via `uv run` for every invocation.
 whisper_params = {
-    "command": sys.executable,
+    "command": _get_python_executable(),
     "args": ["-m", "video2md.server.whisper_server"],
 }
 

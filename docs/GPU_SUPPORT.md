@@ -9,7 +9,7 @@ The `faster-whisper` library supports GPU acceleration through CUDA, which can p
 ## Requirements
 
 - NVIDIA GPU with CUDA support
-- CUDA Toolkit 11.8 or 12.1
+- CUDA Toolkit 11.8 or newer (12.x recommended)
 - Sufficient GPU memory (varies by model size):
   - tiny: ~1 GB
   - base: ~1 GB
@@ -17,34 +17,53 @@ The `faster-whisper` library supports GPU acceleration through CUDA, which can p
   - medium: ~5 GB
   - large-v3: ~10 GB
 
-## Installation
+## Quick Installation (Recommended)
 
-### Step 1: Install CUDA Toolkit
+Use the provided installation scripts that automatically detect your CUDA version:
 
-Download and install CUDA Toolkit from:
-https://developer.nvidia.com/cuda-downloads
+### Windows (PowerShell):
+
+```powershell
+.\install_gpu.ps1
+```
+
+### Linux/macOS (Bash):
+
+```bash
+bash install_gpu.sh
+```
+
+The script will:
+
+1. Detect your CUDA version
+2. Install the appropriate PyTorch build
+3. Verify GPU support is working
+
+## Manual Installation
+
+### Step 1: Check CUDA Version
+
+First, verify CUDA is installed:
+
+```bash
+nvcc --version
+```
 
 ### Step 2: Install PyTorch with CUDA Support
 
-Choose the appropriate command for your CUDA version:
+**⚠️ Important**: PyTorch must be installed from a special index URL, which is why `uv sync` alone won't install GPU support.
+
+Choose the command for your CUDA version:
+
+**For CUDA 12.x (12.4 and newer, including 12.9):**
+
+```bash
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+```
 
 **For CUDA 11.8:**
 
 ```bash
-uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-```
-
-**For CUDA 12.1:**
-
-```bash
-uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-```
-
-**Or install with the optional gpu dependencies:**
-
-```bash
-uv pip install -e ".[gpu]"
-# Then manually install PyTorch with CUDA
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 ```
 
