@@ -11,3 +11,8 @@ wheels/
 .env
 input/
 output/
+
+# Whisper models (root level only)
+/models/
+
+.DS_Store

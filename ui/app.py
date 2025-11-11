@@ -20,6 +20,8 @@ from video2md.agents.whisper_host import whisper_host
 from pathlib import Path
 import asyncio
 import re
+import shutil
+import tempfile
 from typing import List, Tuple
 
 try:
@@ -101,7 +103,7 @@ def _is_video_file(name: str) -> bool:
     return Path(name).suffix.lower() in video_exts
 
 
-async def process_selected(selected_rel_paths: List[str]) -> List[str]:
+async def process_selected(selected_rel_paths: List[str], prompt_variant: str = "github_project", user_notes: str = "") -> List[str]:
     """Run the end-to-end pipeline only for selected input files.
 
     selected_rel_paths: file paths relative to ./input
@@ -111,7 +113,7 @@ async def process_selected(selected_rel_paths: List[str]) -> List[str]:
     srts = await whisper_host(input_dir=str(INPUT_DIR), selected_files=selected_rel_paths)
     if not srts:
         return []
-    research = await research_host(srts)
+    research = await research_host(srts, prompt_variant=prompt_variant, user_notes=user_notes)
     summaries = await summarize_host(srts, research)
     return summaries
 
@@ -139,6 +141,24 @@ def main():  # pragma: no cover - placeholder only
                     label="Select media files to process",
                 )
 
+                prompt_select = gr.Dropdown(
+                    choices=[
+                        "github_project",
+                        "general",
+                        "tutorial",
+                        "review_analysis",
+                    ],
+                    value="github_project",
+                    label="Research prompt",
+                    allow_custom_value=False,
+                )
+
+                user_notes = gr.Textbox(
+                    lines=4,
+                    label="User notes (optional)",
+                    info="Add author comments, product model numbers, repo URLs, or any hints to bias research.",
+                )
+
                 run_btn = gr.Button("Go")
 
                 log_output = gr.Textbox(
@@ -149,6 +169,9 @@ def main():  # pragma: no cover - placeholder only
                 gr.Markdown("### Preview")
                 base_list = gr.Dropdown(
                     choices=_list_basenames(), label="Select filename")
+                # Download button for the whole folder
+                folder_download = gr.File(
+                    label="Download Folder", visible=False, interactive=False)
                 # Responsive player style (limit height, fit width)
                 gr.HTML("""
                 <style>
@@ -257,6 +280,28 @@ def main():  # pragma: no cover - placeholder only
                 r"<video[\s\S]*?</video>", "\n> [Video preview is shown in the player above]\n", md_text, flags=re.IGNORECASE)
             return cleaned
 
+        def _create_folder_zip(basename: str) -> str | None:
+            """Create a zip file of the entire output folder for a basename."""
+            if not basename:
+                return None
+            base_dir = OUTPUT_DIR / basename
+            if not base_dir.exists() or not base_dir.is_dir():
+                return None
+            
+            # Create a temporary zip file
+            temp_dir = Path(tempfile.gettempdir())
+            zip_path = temp_dir / f"{basename}.zip"
+            
+            # Create zip archive
+            shutil.make_archive(
+                str(zip_path.with_suffix('')),  # base name without .zip
+                'zip',  # archive format
+                base_dir.parent,  # root directory
+                basename  # base directory to archive
+            )
+            
+            return str(zip_path) if zip_path.exists() else None
+
         def _load_all_previews(basename: str):
             # Markdown
             if basename:
@@ -273,20 +318,25 @@ def main():  # pragma: no cover - placeholder only
                 # SRT
                 srt_path = base_dir / f"{basename}.srt"
                 srt_text = _read_text_file(srt_path) or "(No SRT content)"
+                # Folder download
+                zip_path = _create_folder_zip(basename)
+                folder_visible = zip_path is not None
             else:
                 md_display, media_path, txt_text, srt_text = "", None, "", ""
+                zip_path, folder_visible = None, False
             return (
                 gr.update(value=md_display),
                 gr.update(value=media_path),
                 gr.update(value=txt_text),
                 gr.update(value=srt_text),
+                gr.update(value=zip_path, visible=folder_visible),
             )
 
         base_list.change(_load_all_previews, inputs=base_list,
-                         outputs=[md_preview, md_video, txt_code, srt_code])
+                         outputs=[md_preview, md_video, txt_code, srt_code, folder_download])
 
         # Run pipeline for selected inputs only
-        async def on_run(selected: List[str]):
+        async def on_run(selected: List[str], prompt_variant: str, notes: str):
             log = ""
 
             def step(msg: str):
@@ -325,7 +375,7 @@ def main():  # pragma: no cover - placeholder only
                     async with sem:
                         # Research for a single file
                         try:
-                            research_res = await research_host([srt_path])
+                            research_res = await research_host([srt_path], prompt_variant=prompt_variant, user_notes=notes)
                             # Summarize for the same single file
                             md_paths = await summarize_host([srt_path], research_res)
                             md_path = md_paths[0] if md_paths else None
@@ -369,7 +419,7 @@ def main():  # pragma: no cover - placeholder only
                 yield step(f"Error occurred: {e}"), gr.update(choices=_list_basenames()), gr.update(choices=_list_media_in_input(), value=[])
 
         # Note: on_run now returns three outputs: logs, basename dropdown, and input file checkbox group
-        run_btn.click(on_run, inputs=[input_files],
+        run_btn.click(on_run, inputs=[input_files, prompt_select, user_notes],
                       outputs=[log_output, base_list, input_files])
 
         # Timer: background refresh for input list to reduce manual refresh actions
@@ -383,7 +433,7 @@ def main():  # pragma: no cover - placeholder only
             # Older Gradio versions may not have Timer; ignore if unavailable
             pass
 
-    demo.launch()
+    demo.launch(server_name="0.0.0.0")
 
 
 if __name__ == "__main__":  # pragma: no cover - manual run only

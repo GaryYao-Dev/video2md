@@ -35,6 +35,7 @@ dependencies = [
     "openai-agents>=0.4.2",
     "jinja2>=3.1.0",
     "gradio>=5.49.1",
+    "faster-whisper>=1.1.1",
 ]
 
 [project.urls]
@@ -54,6 +55,13 @@ test = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
 ]
+gpu = [
+    # For GPU acceleration with CUDA
+    # Install PyTorch with CUDA support:
+    # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+    # Or for CUDA 12.1:
+    # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+]
 mcp-servers = [
     # Preinstall these to avoid `uvx` resolving at runtime (Python 3.11+)
     "mcp-server-fetch>=0 ; python_version >= '3.11'",
@@ -61,9 +69,10 @@ mcp-servers = [
 ]
 
 [project.scripts]
-video2md-whisper-client = "video2md.tools.whisper_tool:main"
+video2md-whisper-client = "video2md.clients.whisper_client:main"
 video2md-video-converter = "video2md.tools.video_converter_tool:main"
 video2md-chinese-converter = "video2md.tools.chinese_converter_tool:main"
+video2md-transcript-converter = "video2md.utils.transcript_converter:main"
 video2md-whisper-server = "video2md.server.whisper_server:main"
 
 [tool.setuptools.packages.find]

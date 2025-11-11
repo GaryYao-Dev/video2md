@@ -1,485 +1,374 @@
 """
-Whisper Server Client Example
-Demonstrates how to call Whisper transcription service API
-Supports audio and video files (videos are automatically converted to audio)
+Local Whisper Client using faster-whisper
+Adapted from BiliNote project with Hugging Face model support
 """
-import requests
-from pathlib import Path
 import os
-import tempfile
-import re
-from video2md.utils.video_converter import VideoConverter
-import dotenv
+from pathlib import Path
+from typing import Optional
+import logging
 
-# Import Chinese converter
-try:
-    from video2md.utils.chinese_converter import convert_chinese_text
-    CHINESE_CONVERSION_AVAILABLE = True
-    print("Simplified Chinese conversion available.")
-except Exception:
-    CHINESE_CONVERSION_AVAILABLE = False
-    print("Warning: Chinese converter not available.")
+from dotenv import load_dotenv
+from faster_whisper import WhisperModel
 
-dotenv.load_dotenv(override=True)
-whisper_api_url = os.getenv("WHISPER_API_URL", "http://localhost:8000")
-print(f"Using Whisper server URL: {whisper_api_url}")
+from video2md.models.transcription_models import TranscriptSegment, TranscriptResult
+
+# Load environment variables
+load_dotenv(override=True)
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
-def srt_to_txt(srt_content: str) -> str:
+# Model name to Hugging Face repository mapping
+# Using Systran models as specified
+MODEL_MAP = {
+    "tiny": "Systran/faster-whisper-tiny",
+    "base": "Systran/faster-whisper-base",
+    "small": "Systran/faster-whisper-small",
+    "medium": "Systran/faster-whisper-medium",
+    "large-v1": "Systran/faster-whisper-large-v1",
+    "large-v2": "Systran/faster-whisper-large-v2",
+    "large-v3": "Systran/faster-whisper-large-v3",
+}
+
+
+class WhisperClient:
     """
-    Convert SRT subtitle content to plain text
-
-    Args:
-        srt_content: SRT format content as string
-
-    Returns:
-        Plain text content with sentences joined by commas
+    Local Whisper transcription client using faster-whisper
+    
+    Features:
+    - Automatic model download from Hugging Face
+    - CUDA auto-detection with CPU fallback
+    - Configurable model storage directory
+    - Structured output with segments and timestamps
     """
-    # Split content into subtitle blocks
-    blocks = re.split(r'\n\s*\n', srt_content.strip())
 
-    sentences = []
+    def __init__(
+        self,
+        model_size: str = None,
+        device: str = None,
+        compute_type: str = None,
+        cpu_threads: int = 4,
+        model_dir: str = None,
+    ):
+        """
+        Initialize Whisper client
 
-    for block in blocks:
-        if not block.strip():
-            continue
-
-        lines = block.strip().split('\n')
-
-        # Skip if not enough lines (need at least 3: number, timestamp, text)
-        if len(lines) < 3:
-            continue
-
-        # Extract text content (skip number and timestamp lines)
-        text_lines = lines[2:]  # Skip subtitle number and timestamp
-        text_content = ' '.join(text_lines).strip()
-
-        if text_content:
-            sentences.append(text_content)
-
-    # Join sentences with commas and add period at the end
-    result = '\n'.join(sentences)
-    if result and not result.endswith('。'):
-        result += '。'
-
-    return result
-
-
-def convert_srt_file_to_txt(srt_file_path: str, txt_file_path: str = None) -> str:
-    """
-    Convert SRT file to TXT file
-
-    Args:
-        srt_file_path: Path to input SRT file
-        txt_file_path: Path to output TXT file (optional)
-
-    Returns:
-        Path to the generated TXT file
-    """
-    srt_path = Path(srt_file_path)
-
-    if not srt_path.exists():
-        raise FileNotFoundError(f"SRT file does not exist: {srt_file_path}")
-
-    # Read SRT content
-    with open(srt_path, 'r', encoding='utf-8') as f:
-        srt_content = f.read()
-
-    # Convert to plain text
-    txt_content = srt_to_txt(srt_content)
-
-    # Determine output file path
-    if txt_file_path is None:
-        txt_file_path = str(srt_path.with_suffix('.txt'))
-
-    # Write TXT content
-    txt_path = Path(txt_file_path)
-    txt_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(txt_path, 'w', encoding='utf-8') as f:
-        f.write(txt_content)
-
-    print(f"SRT converted to TXT: {txt_path}")
-    return str(txt_path)
-
-
-def transcribe_media(
-    media_file_path: str,
-    server_url: str = whisper_api_url,
-    language: str = None,
-    output_format: str = "srt",
-    task: str = "transcribe",
-    initial_prompt: str = None,
-    save_path: str = None,
-    output_dir: str = "whisper_output",
-    keep_temp_audio: bool = False,
-    chinese_format: str = "simplified"
-):
-    """
-    Call Whisper server for media file transcription
-    Supports audio and video files, video files are automatically converted to audio
-
-    Args:
-        media_file_path: Media file path (audio or video)
-        server_url: Server URL (default: http://localhost:8000)
-        language: Language code (default: zh)
-        output_format: Output format (default: srt, options: txt, vtt, tsv, json)
-        task: Task type (default: transcribe, options: translate)
-        initial_prompt: Initial prompt text
-        save_path: Path to save results (optional)
-        output_dir: Output directory (optional, default 'whisper_output')
-        keep_temp_audio: Whether to keep temporary audio files (default: False)
-        chinese_format: Chinese character format (optional, options: "simplified", "traditional")
-
-    Returns:
-        Transcription result text
-    """
-    # Check if file exists
-    media_path = Path(media_file_path)
-    if not media_path.exists():
-        raise FileNotFoundError(
-            f"Media file does not exist: {media_file_path}")
-
-    # Initialize converter
-    converter = VideoConverter()
-    temp_audio_path = None
-    audio_file_to_process = None
-
-    try:
-        # Check file type and process
-        if converter.is_video_file(media_path):
-            print(f"Detected video file: {media_path.name}")
-            print("Converting to audio format...")
-
-            # Determine audio output directory (temporary files use temp directory)
-            audio_output_dir = tempfile.gettempdir(
-            ) if not keep_temp_audio else (output_dir or "whisper_output")
-
-            # Convert video to audio
-            audio_file_to_process = converter.video_to_audio(
-                input_path=media_path,
-                output_dir=audio_output_dir,
-                audio_format='wav',
-                sample_rate=16000,  # Whisper recommended sample rate
-                channels=1          # Mono, reduce file size
-            )
-
-            temp_audio_path = Path(audio_file_to_process)
-            print(f"Video conversion completed: {temp_audio_path.name}")
-
-        elif converter.is_audio_file(media_path):
-            print(f"Detected audio file: {media_path.name}")
-            audio_file_to_process = str(media_path)
+        Args:
+            model_size: Model size (tiny/base/small/medium/large-v1/large-v2/large-v3)
+            device: Compute device ('cpu', 'cuda', or None for auto-detect)
+            compute_type: Computation precision (None for auto: 'float16' on GPU, 'int8' on CPU)
+            cpu_threads: Number of CPU threads to use
+            model_dir: Directory to store models (default: ./models/whisper/)
+        """
+        # Get configuration from environment variables with fallbacks
+        # Priority: environment variable > explicit parameter > default value
+        # This allows .env to override all scripts
+        env_model_size = os.getenv("WHISPER_MODEL_SIZE")
+        if env_model_size:
+            self.model_size = env_model_size
+            if model_size and model_size != env_model_size:
+                logger.info(f"Environment variable WHISPER_MODEL_SIZE={env_model_size} overrides parameter model_size={model_size}")
         else:
-            raise ValueError(f"Unsupported file format: {media_path.suffix}")
+            self.model_size = model_size or "base"
+        
+        # Device detection
+        if device is None:
+            device = os.getenv("WHISPER_DEVICE", "auto")
+        
+        if device == "auto" or device is None:
+            self.device = "cuda" if self._is_cuda_available() else "cpu"
+        elif device == "cpu":
+            self.device = "cpu"
+        else:
+            # User requested CUDA, check if available
+            self.device = "cuda" if self._is_cuda_available() else "cpu"
+            if device == "cuda" and self.device == "cpu":
+                logger.warning("CUDA requested but not available, falling back to CPU")
 
-        # Prepare request
-        url = f"{server_url}/transcribe"
+        # Compute type configuration
+        # GPU uses float16, CPU uses int8 quantization for efficiency
+        if compute_type is None:
+            compute_type = os.getenv("WHISPER_COMPUTE_TYPE")
+        
+        self.compute_type = compute_type or (
+            "float16" if self.device == "cuda" else "int8"
+        )
 
-        # Prepare form data
-        data = {
-            "language": language,
-            "output_format": output_format,
-            "task": task,
-        }
+        # Model directory setup
+        if model_dir is None:
+            model_dir = os.getenv("WHISPER_MODEL_DIR", "./models/whisper")
+        
+        self.model_dir = Path(model_dir)
+        self.model_dir.mkdir(parents=True, exist_ok=True)
+        
+        # CPU threads
+        self.cpu_threads = int(os.getenv("WHISPER_CPU_THREADS", cpu_threads))
 
-        if initial_prompt:
-            data["initial_prompt"] = initial_prompt
+        # Get model path or Hugging Face repo ID
+        model_path = self._get_model_path()
 
-        # Prepare file
-        audio_path = Path(audio_file_to_process)
-        with open(audio_path, "rb") as f:
-            files = {"file": (audio_path.name, f, "audio/*")}
+        logger.info(f"Initializing Whisper model: {self.model_size}")
+        logger.info(f"Device: {self.device}, Compute type: {self.compute_type}")
+        logger.info(f"Model directory: {self.model_dir}")
 
-            # Send request
-            print(f"Sending request to {url}...")
-            print(f"Processing file: {audio_path.name}")
-            print(f"Language: {language}, Format: {output_format}")
+        # Initialize Whisper model
+        # If model_path is a Hugging Face repo ID, faster-whisper will download it automatically
+        self.model = WhisperModel(
+            model_size_or_path=model_path,
+            device=self.device,
+            compute_type=self.compute_type,
+            cpu_threads=self.cpu_threads,
+            download_root=str(self.model_dir)
+        )
 
-            response = requests.post(url, data=data, files=files)
+        logger.info("Whisper model initialized successfully")
 
-        # Check response
-        if response.status_code == 200:
-            result = response.json()['content']
-            detected_language = response.json()['language']
-            print("Transcription successful!")
-
-            # Convert Chinese format if specified
-            if detected_language == "zh":
-                if CHINESE_CONVERSION_AVAILABLE:
-                    print(f"Converting Chinese text to {chinese_format}...")
-                    result = convert_chinese_text(result, chinese_format)
-                else:
-                    print(
-                        "Warning: Chinese conversion not available. Skipping conversion.")
-
-            # Save results
-            saved_srt_path = None
-            if save_path:
-                save_file = Path(save_path)
-                # Ensure save directory exists
-                save_file.parent.mkdir(parents=True, exist_ok=True)
-                save_file.write_text(result, encoding="utf-8")
-                print(f"Results saved to: {save_path}")
-                if output_format.lower() == "srt":
-                    saved_srt_path = str(save_file)
+    @staticmethod
+    def _is_cuda_available() -> bool:
+        """
+        Check if CUDA is available for GPU acceleration
+        
+        Returns:
+            True if CUDA is available, False otherwise
+        """
+        try:
+            import torch
+            if torch.cuda.is_available():
+                logger.info("✓ CUDA available, using GPU")
+                return True
             else:
-                # If no save path specified but output directory is specified, auto-generate save path
-                if output_dir:
-                    output_path = Path(output_dir)
-                    output_path.mkdir(parents=True, exist_ok=True)
-                    save_filename = f"{media_path.stem}.{output_format}"
-                    auto_save_path = output_path / save_filename
-                    auto_save_path.write_text(result, encoding="utf-8")
-                    print(f"Results auto-saved to: {auto_save_path}")
-                    if output_format.lower() == "srt":
-                        saved_srt_path = str(auto_save_path)
+                logger.info("✗ PyTorch installed but CUDA unavailable, using CPU")
+                return False
+        except ImportError:
+            logger.info("✗ PyTorch not installed, using CPU")
+            return False
 
-            # If output format is SRT, also generate TXT version
-            if output_format.lower() == "srt" and saved_srt_path:
-                try:
-                    txt_path = convert_srt_file_to_txt(saved_srt_path)
-                    print(f"Additional TXT file generated: {txt_path}")
-                except Exception as e:
-                    print(
-                        f"Warning: Failed to generate TXT file from SRT: {e}")
-
-            return result
+    def _get_model_path(self) -> str:
+        """
+        Get model path or Hugging Face repository ID
+        
+        Returns:
+            Local model path if exists, otherwise Hugging Face repo ID
+        """
+        # Check if model exists in Hugging Face cache format
+        # faster-whisper downloads to: {model_dir}/models--Systran--faster-whisper-{model_size}
+        if self.model_size in MODEL_MAP:
+            repo_id = MODEL_MAP[self.model_size]
+            # Convert repo ID to cache directory name: "Systran/faster-whisper-medium" -> "models--Systran--faster-whisper-medium"
+            cache_dir_name = repo_id.replace("/", "--")
+            cache_dir_name = f"models--{cache_dir_name}"
+            local_cache_path = self.model_dir / cache_dir_name
+            
+            if local_cache_path.exists():
+                logger.info(f"Using cached model from: {local_cache_path}")
+                # Return the repo ID - faster-whisper will find it in cache
+                return repo_id
+            else:
+                logger.info(f"Model not found in cache, will download from Hugging Face: {repo_id}")
+                return repo_id
         else:
-            error_msg = f"Request failed (status code: {response.status_code}): {response.text}"
-            print(error_msg)
-            raise Exception(error_msg)
+            # Unknown model size, try as-is (could be custom path or repo ID)
+            logger.warning(f"Unknown model size '{self.model_size}', attempting to use as-is")
+            return self.model_size
 
-    finally:
-        # Clean up temporary files
-        if temp_audio_path and temp_audio_path.exists() and not keep_temp_audio:
-            try:
-                os.unlink(temp_audio_path)
-                print(f"Cleaned up temporary file: {temp_audio_path.name}")
-            except Exception as e:
-                print(f"Failed to clean up temporary file: {e}")
+    def transcribe(
+        self,
+        audio_file_path: str,
+        language: str = None,
+        task: str = "transcribe",
+        initial_prompt: str = None,
+        word_timestamps: bool = False,
+        vad_filter: bool = False,
+    ) -> TranscriptResult:
+        """
+        Transcribe audio file to text with timestamps
+        
+        Args:
+            audio_file_path: Path to audio file
+            language: Language code (e.g., 'zh', 'en'). None for auto-detection
+            task: 'transcribe' or 'translate' (to English)
+            initial_prompt: Initial prompt to guide the model
+            word_timestamps: Enable word-level timestamps
+            vad_filter: Enable voice activity detection filter
+            
+        Returns:
+            TranscriptResult with language, full text, and segments
+            
+        Raises:
+            FileNotFoundError: If audio file doesn't exist
+            Exception: If transcription fails
+        """
+        # Check if file exists
+        audio_path = Path(audio_file_path)
+        if not audio_path.exists():
+            raise FileNotFoundError(f"Audio file not found: {audio_file_path}")
 
-
-def check_output_exists(media_file_path: str, output_dir: str, output_format: str) -> bool:
-    """
-    Check if output file already exists for the given media file
-
-    Args:
-        media_file_path: Path to the media file
-        output_dir: Output directory
-        output_format: Output format (srt, txt, etc.)
-
-    Returns:
-        True if output file exists, False otherwise
-    """
-    media_path = Path(media_file_path)
-    output_path = Path(output_dir)
-
-    # Check main output file
-    main_output_file = output_path / f"{media_path.stem}.{output_format}"
-    if main_output_file.exists():
-        return True
-
-    # If main format is SRT, also check for TXT file
-    if output_format.lower() == "srt":
-        txt_output_file = output_path / f"{media_path.stem}.txt"
-        if txt_output_file.exists():
-            return True
-
-    return False
-
-
-def batch_transcribe_media(
-    input_dir: str,
-    server_url: str = whisper_api_url,
-    language: str = "zh",
-    output_format: str = "srt",
-    task: str = "transcribe",
-    initial_prompt: str = None,
-    output_dir: str = None,
-    keep_temp_audio: bool = False,
-    chinese_format: str = "simplified",
-    skip_existing: bool = True,
-    file_patterns: list = None
-):
-    """
-    Batch transcribe all media files in a directory
-
-    Args:
-        input_dir: Directory containing media files
-        server_url: Whisper server URL
-        language: Language code
-        output_format: Output format
-        task: Task type
-        initial_prompt: Initial prompt text
-        output_dir: Output directory (defaults to ./whisper_output)
-        keep_temp_audio: Whether to keep temporary audio files
-        chinese_format: Chinese character format
-        skip_existing: Whether to skip files that already have output
-        file_patterns: List of file patterns to process (defaults to common media formats)
-
-    Returns:
-        Dictionary with processing results
-    """
-    input_path = Path(input_dir)
-    if not input_path.exists():
-        raise FileNotFoundError(f"Input directory does not exist: {input_dir}")
-
-    if not input_path.is_dir():
-        raise ValueError(f"Input path is not a directory: {input_dir}")
-
-    # Set default output directory to project root whisper_output
-    if output_dir is None:
-        # Use the current working directory (project root) + whisper_output
-        output_dir = "whisper_output"
-
-    # Set default file patterns for media files
-    if file_patterns is None:
-        file_patterns = [
-            "*.mp4", "*.avi", "*.mkv", "*.mov", "*.wmv", "*.flv", "*.webm",  # Video
-            "*.mp3", "*.wav", "*.flac", "*.aac", "*.ogg", "*.m4a", "*.wma"   # Audio
-        ]
-
-    # Find all media files
-    media_files = []
-    for pattern in file_patterns:
-        media_files.extend(input_path.glob(pattern))
-        # Also search in subdirectories
-        media_files.extend(input_path.rglob(pattern))
-
-    # Remove duplicates and sort
-    media_files = sorted(list(set(media_files)))
-
-    if not media_files:
-        print(f"No media files found in {input_dir}")
-        print(f"Searched for patterns: {file_patterns}")
-        return {"processed": 0, "skipped": 0, "failed": 0, "results": []}
-
-    print(f"Found {len(media_files)} media files to process")
-    print(f"Output directory: {output_dir}")
-    print(f"Skip existing: {skip_existing}")
-    print("-" * 60)
-
-    results = {
-        "processed": 0,
-        "skipped": 0,
-        "failed": 0,
-        "results": []
-    }
-
-    # Initialize converter for file type checking
-    converter = VideoConverter()
-
-    for i, media_file in enumerate(media_files, 1):
-        print(f"\n[{i}/{len(media_files)}] Processing: {media_file.name}")
-
-        # Check if file is actually a media file
-        if not (converter.is_video_file(media_file) or converter.is_audio_file(media_file)):
-            print(f"  ⚠️  Skipping non-media file: {media_file.name}")
-            results["skipped"] += 1
-            continue
-
-        # Check if output already exists
-        if skip_existing and check_output_exists(str(media_file), output_dir, output_format):
-            print(f"  ✓  Output already exists, skipping: {media_file.name}")
-            results["skipped"] += 1
-            results["results"].append({
-                "file": str(media_file),
-                "status": "skipped",
-                "reason": "output_exists"
-            })
-            continue
+        logger.info(f"Transcribing: {audio_path.name}")
+        logger.info(f"Language: {language or 'auto-detect'}, Task: {task}")
 
         try:
-            # Process the file
-            print(f"  🔄 Transcribing: {media_file.name}")
-            result = transcribe_media(
-                media_file_path=str(media_file),
-                server_url=server_url,
-                language=language,
-                output_format=output_format,
-                task=task,
-                initial_prompt=initial_prompt,
-                save_path=None,  # Use auto-generated path
-                output_dir=output_dir,
-                keep_temp_audio=keep_temp_audio,
-                chinese_format=chinese_format
+            # Prepare transcription parameters
+            transcribe_params = {
+                "language": language,
+                "task": task,
+            }
+            
+            if initial_prompt:
+                transcribe_params["initial_prompt"] = initial_prompt
+            
+            if word_timestamps:
+                transcribe_params["word_timestamps"] = True
+            
+            if vad_filter:
+                transcribe_params["vad_filter"] = True
+
+            # Perform transcription
+            segments_raw, info = self.model.transcribe(
+                str(audio_path),
+                **transcribe_params
             )
 
-            print(f"  ✅ Successfully processed: {media_file.name}")
-            results["processed"] += 1
-            results["results"].append({
-                "file": str(media_file),
-                "status": "success",
-                "output_length": len(result)
-            })
+            # Process segments
+            segments = []
+            full_text = ""
+
+            for seg in segments_raw:
+                text = seg.text.strip()
+                full_text += text + " "
+                segments.append(TranscriptSegment(
+                    start=seg.start,
+                    end=seg.end,
+                    text=text
+                ))
+
+            # Create result
+            result = TranscriptResult(
+                language=info.language,
+                full_text=full_text.strip(),
+                segments=segments,
+                raw={
+                    "language": info.language,
+                    "language_probability": info.language_probability,
+                    "duration": info.duration,
+                    "duration_after_vad": getattr(info, 'duration_after_vad', None),
+                }
+            )
+
+            logger.info(f"Transcription completed: {len(segments)} segments")
+            logger.info(f"Detected language: {info.language} (probability: {info.language_probability:.2f})")
+            logger.info(f"Duration: {info.duration:.2f}s")
+
+            return result
 
         except Exception as e:
-            print(f"  ❌ Failed to process {media_file.name}: {str(e)}")
-            results["failed"] += 1
-            results["results"].append({
-                "file": str(media_file),
-                "status": "failed",
-                "error": str(e)
-            })
+            logger.error(f"Transcription failed: {e}")
+            raise
 
-    print("\n" + "=" * 60)
-    print("BATCH PROCESSING SUMMARY")
-    print("=" * 60)
-    print(f"Total files found: {len(media_files)}")
-    print(f"Successfully processed: {results['processed']}")
-    print(f"Skipped: {results['skipped']}")
-    print(f"Failed: {results['failed']}")
-    print(f"Output directory: {output_dir}")
-
-    return results
-
-
-def check_server_health(server_url: str = whisper_api_url):
-    """
-    Check server health status
-
-    Args:
-        server_url: Server URL
-
-    Returns:
-        Server status information
-    """
-    url = f"{server_url}/health"
-    response = requests.get(url)
-
-    if response.status_code == 200:
-        return response.json()
-    else:
-        raise Exception(f"Cannot connect to server: {response.status_code}")
+    def transcribe_with_video(
+        self,
+        video_file_path: str,
+        language: str = None,
+        task: str = "transcribe",
+        initial_prompt: str = None,
+        word_timestamps: bool = False,
+        vad_filter: bool = False,
+    ) -> TranscriptResult:
+        """
+        Transcribe video file (extracts audio first, then transcribes)
+        
+        Args:
+            video_file_path: Path to video file
+            language: Language code (e.g., 'zh', 'en'). None for auto-detection
+            task: 'transcribe' or 'translate' (to English)
+            initial_prompt: Initial prompt to guide the model
+            word_timestamps: Enable word-level timestamps
+            vad_filter: Enable voice activity detection filter
+            
+        Returns:
+            TranscriptResult with language, full text, and segments
+        """
+        # Import video converter
+        from video2md.utils.video_converter import VideoConverter
+        import tempfile
+        
+        video_path = Path(video_file_path)
+        if not video_path.exists():
+            raise FileNotFoundError(f"Video file not found: {video_file_path}")
+        
+        converter = VideoConverter()
+        
+        # Check if it's a video file
+        if not converter.is_video_file(video_path):
+            # If it's already an audio file, just transcribe directly
+            if converter.is_audio_file(video_path):
+                logger.info("File is already audio, transcribing directly")
+                return self.transcribe(
+                    audio_file_path=str(video_path),
+                    language=language,
+                    task=task,
+                    initial_prompt=initial_prompt,
+                    word_timestamps=word_timestamps,
+                    vad_filter=vad_filter,
+                )
+            else:
+                raise ValueError(f"Unsupported file format: {video_path.suffix}")
+        
+        logger.info(f"Extracting audio from video: {video_path.name}")
+        
+        # Convert video to audio
+        temp_dir = tempfile.gettempdir()
+        audio_file = converter.video_to_audio(
+            input_path=video_path,
+            output_dir=temp_dir,
+            audio_format='wav',
+            sample_rate=16000,  # Whisper recommended sample rate
+            channels=1          # Mono
+        )
+        
+        try:
+            # Transcribe the extracted audio
+            result = self.transcribe(
+                audio_file_path=audio_file,
+                language=language,
+                task=task,
+                initial_prompt=initial_prompt,
+                word_timestamps=word_timestamps,
+                vad_filter=vad_filter,
+            )
+            
+            return result
+        
+        finally:
+            # Clean up temporary audio file
+            try:
+                os.unlink(audio_file)
+                logger.info(f"Cleaned up temporary audio file")
+            except Exception as e:
+                logger.warning(f"Failed to clean up temporary file: {e}")
 
 
 def main():
-    """Main function - example usage"""
+    """
+    Command-line interface for Whisper client
+    """
     import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Whisper client - Single file or batch processing")
-    parser.add_argument("input_path", type=str,
-                        help="Media file path or directory (auto-detects batch mode for directories)")
+    
+    parser = argparse.ArgumentParser(description="Local Whisper transcription client")
+    parser.add_argument("input_file", type=str, help="Audio or video file to transcribe")
     parser.add_argument(
-        "--server",
+        "--model-size",
         type=str,
-        default=whisper_api_url,
-        help="Whisper server URL (default: http://localhost:8000)"
+        default="base",
+        choices=list(MODEL_MAP.keys()),
+        help="Whisper model size (default: base)"
     )
     parser.add_argument(
         "--language",
         type=str,
         default=None,
-        help="Language code"
-    )
-    parser.add_argument(
-        "--format",
-        type=str,
-        default="srt",
-        choices=["srt", "txt", "vtt", "tsv", "json"],
-        help="Output format (default: srt)"
+        help="Language code (e.g., zh, en). Auto-detect if not specified"
     )
     parser.add_argument(
         "--task",
@@ -489,166 +378,74 @@ def main():
         help="Task type (default: transcribe)"
     )
     parser.add_argument(
-        "--prompt",
+        "--device",
         type=str,
-        default=None,
-        help="Initial prompt text"
+        default="auto",
+        choices=["auto", "cpu", "cuda"],
+        help="Compute device (default: auto)"
     )
     parser.add_argument(
         "--output",
         type=str,
         default=None,
-        help="Output file path (only for single file processing)"
+        help="Output file path (optional)"
     )
     parser.add_argument(
-        "--output-dir",
+        "--format",
         type=str,
-        default=None,
-        help="Output directory (default: ./whisper_output)"
+        default="txt",
+        choices=["txt", "json"],
+        help="Output format (default: txt)"
     )
-    parser.add_argument(
-        "--chinese-format",
-        type=str,
-        default="simplified",
-        choices=["simplified", "traditional"],
-        help="Chinese character format (simplified/traditional)"
-    )
-    parser.add_argument(
-        "--batch",
-        action="store_true",
-        help="Force batch processing mode (auto-enabled for directories)"
-    )
-    parser.add_argument(
-        "--no-skip-existing",
-        action="store_true",
-        help="Process files even if output already exists (default: skip existing)"
-    )
-    parser.add_argument(
-        "--file-patterns",
-        nargs="*",
-        default=None,
-        help="File patterns to match in batch mode (e.g., *.mp4 *.wav)"
-    )
-
+    
     args = parser.parse_args()
-
-    try:
-        # Check server status
-        print("Checking server status...")
-        health = check_server_health(args.server)
-        print(f"Server status: {health}")
-        print()
-
-        input_path = Path(args.input_path)
-
-        # Auto-detect batch processing mode
-        # If input is a directory, enable batch mode automatically
-        # If --batch flag is explicitly set, also enable batch mode
-        is_batch = input_path.is_dir() or args.batch
-
-        if is_batch:
-            # Batch processing mode
-            if not input_path.is_dir():
-                print(
-                    f"Error: Batch mode requires a directory, got: {args.input_path}")
-                return 1
-
-            if args.output:
-                print("Warning: --output option is ignored in batch mode")
-
-            batch_reason = "auto-detected (directory input)" if input_path.is_dir(
-            ) and not args.batch else "explicitly enabled"
-            print(f"BATCH PROCESSING MODE ({batch_reason})")
-            print(f"Input directory: {input_path}")
-
-            results = batch_transcribe_media(
-                input_dir=str(input_path),
-                server_url=args.server,
-                language=args.language,
-                output_format=args.format,
-                task=args.task,
-                initial_prompt=args.prompt,
-                output_dir=args.output_dir,
-                keep_temp_audio=False,
-                chinese_format=args.chinese_format,
-                skip_existing=not args.no_skip_existing,
-                file_patterns=args.file_patterns
-            )
-
-            # Return non-zero exit code if any files failed
-            return 1 if results["failed"] > 0 else 0
-
-        else:
-            # Single file processing mode
-            if not input_path.exists():
-                print(f"Error: Input file does not exist: {args.input_path}")
-                return 1
-
-            if input_path.is_dir():
-                print(
-                    "Error: Input is a directory. Use --batch flag for batch processing")
-                return 1
-
-            print(f"SINGLE FILE PROCESSING MODE")
-            print(f"Input file: {input_path}")
-
-            # Process output path and output directory
-            output_path = args.output
-            output_dir = args.output_dir or "whisper_output"  # Default output directory
-
-            if not output_path and not args.output_dir:
-                # If neither specified, use default output directory and auto-generated filename
-                output_path = Path(output_dir) / \
-                    f"{input_path.stem}.{args.format}"
-
-            # Check if output already exists and warn user
-            if not args.no_skip_existing:
-                if output_path and Path(output_path).exists():
-                    print(
-                        f"Warning: Output file already exists: {output_path}")
-                    response = input("Continue anyway? (y/N): ")
-                    if response.lower() != 'y':
-                        print("Operation cancelled by user")
-                        return 0
-
-            # Transcribe media file
-            result = transcribe_media(
-                media_file_path=str(input_path),
-                server_url=args.server,
-                language=args.language,
-                output_format=args.format,
-                task=args.task,
-                initial_prompt=args.prompt,
-                save_path=output_path,
-                output_dir=output_dir,
-                chinese_format=args.chinese_format
-            )
-
-            print(f"\n✅ Processing completed successfully!")
-            return 0
-
-    except KeyboardInterrupt:
-        print("\n\n❌ Processing interrupted by user")
+    
+    # Initialize client
+    client = WhisperClient(
+        model_size=args.model_size,
+        device=args.device,
+    )
+    
+    # Transcribe
+    input_path = Path(args.input_file)
+    if not input_path.exists():
+        print(f"Error: File not found: {args.input_file}")
         return 1
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        return 1
-
-
-# Backward compatibility function
-
-def transcribe_audio(audio_file_path: str, **kwargs):
-    """
-    Backward compatibility function: Transcribe audio file
-
-    Args:
-        audio_file_path: Audio file path
-        **kwargs: Other parameters passed to transcribe_media
-
-    Returns:
-        Transcription result text
-    """
-    return transcribe_media(audio_file_path, **kwargs)
+    
+    # Check if it's video or audio
+    from video2md.utils.video_converter import VideoConverter
+    converter = VideoConverter()
+    
+    if converter.is_video_file(input_path):
+        result = client.transcribe_with_video(
+            video_file_path=str(input_path),
+            language=args.language,
+            task=args.task,
+        )
+    else:
+        result = client.transcribe(
+            audio_file_path=str(input_path),
+            language=args.language,
+            task=args.task,
+        )
+    
+    # Output results
+    if args.format == "json":
+        import json
+        from dataclasses import asdict
+        output = json.dumps(asdict(result), ensure_ascii=False, indent=2)
+    else:
+        output = result.full_text
+    
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(output, encoding="utf-8")
+        print(f"Results saved to: {args.output}")
+    else:
+        print(output)
+    
+    return 0
 
 
 if __name__ == "__main__":

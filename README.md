@@ -17,7 +17,6 @@ Video2MD is an intelligent toolkit that automatically converts video content int
 For each video `example.mp4`, you get a complete folder `output/example/` containing:
 
 - 📄 **`example.md`** - Structured summary with embedded video player
-- 🎬 **`example.mp4`** - Original media file (organized)
 - 📝 **`example.txt`** - Clean transcript text
 - 🎞️ **`example.srt`** - Subtitle file with timestamps
 
@@ -69,6 +68,7 @@ The easiest way to use Video2MD is through the web interface:
    ```
 
 3. **Use the Web Interface**:
+
    - Open your browser to the displayed URL (usually http://localhost:7860)
    - Upload videos or select existing files
    - Click "Go" to process
@@ -177,11 +177,11 @@ cp .env.example .env
 
 Then edit the `.env` file with your specific configuration:
 
-| Variable | Description | Example | Required |
-|----------|-------------|---------|----------|
-| `WHISPER_API_URL` | URL for Whisper transcription server | `http://localhost:8000` | Yes |
-| `OPENAI_API_KEY` | OpenAI API key for AI processing | `sk-proj-...` | Yes |
-| `SERPER_API_KEY` | Serper API key for web search | `your_serper_key_here` | Yes |
+| Variable          | Description                          | Example                 | Required |
+| ----------------- | ------------------------------------ | ----------------------- | -------- |
+| `WHISPER_API_URL` | URL for Whisper transcription server | `http://localhost:8000` | Yes      |
+| `OPENAI_API_KEY`  | OpenAI API key for AI processing     | `sk-proj-...`           | Yes      |
+| `SERPER_API_KEY`  | Serper API key for web search        | `your_serper_key_here`  | Yes      |
 
 **Example `.env` file:**
 
@@ -271,38 +271,7 @@ Understanding the organization:
   ```
 
 - **Adjust research timeout** for faster processing:
+
   ```bash
   export RESEARCH_TOOL_SESSION_TIMEOUT_SECONDS=10
   ```
-
-## 🤝 Contributing
-
-We welcome contributions! Here's how to get started:
-
-1. **Fork the repository** and clone your fork
-2. **Set up development environment**: `uv sync`
-3. **Make your changes** and test thoroughly
-4. **Update documentation** if needed
-5. **Submit a pull request** with a clear description
-
-### Development Setup
-
-```bash
-git clone https://github.com/your-username/video2md.git
-cd video2md
-uv sync --extra dev  # Install with development dependencies
-uv run pytest       # Run tests
-```
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙋 Support
-
-- **Issues**: [GitHub Issues](https://github.com/your-username/video2md/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-username/video2md/discussions)
-
----
-
-**Made with ❤️ for the open source community**
