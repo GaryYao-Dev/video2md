@@ -39,6 +39,7 @@ class VideoConverter:
                            capture_output=True, check=True)
             logger.info("FFmpeg check passed")
         except (subprocess.CalledProcessError, FileNotFoundError):
+            logger.error("FFmpeg not found. Please install FFmpeg to use VideoConverter.")
             raise RuntimeError(
                 "FFmpeg not installed or unavailable. Please install FFmpeg first: brew install ffmpeg (macOS)")
 

@@ -72,6 +72,9 @@ The easiest way to use Video2MD is through the web interface:
    bash install_gpu.sh
 
    uv run python ui/app.py
+
+   # run the following command to enable MCP logger output
+   uv run python ui/app.py 2>&1
    ```
 
 3. **Use the Web Interface**:
