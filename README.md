@@ -61,6 +61,7 @@ The easiest way to use Video2MD is through the web interface:
 2. **Setup and Launch**:
 
    ```bash
+   # install ffmpeg
    git clone https://github.com/your-username/video2md.git
    cd video2md
    uv sync

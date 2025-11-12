@@ -8,11 +8,16 @@ Steps (order is mandatory):
 
 1. Use the filesystem MCP tool to check existence of SRT_PATH.
 2. IF SRT_PATH EXISTS: skip transcribe_media; ensure DEST_DIR exists; move MEDIA_PATH into DEST_DIR (handle name collisions with suffixes).
-3. IF SRT_PATH DOES NOT EXIST: call transcribe_media with media_file_path=MEDIA_PATH output_dir=DEST_DIR and WAIT for completion; then ensure DEST_DIR exists; move MEDIA_PATH into DEST_DIR (handle name collisions with suffixes).
+3. IF SRT_PATH DOES NOT EXIST:
+   a. Call transcribe_media with media_file_path=MEDIA_PATH output_dir=DEST_DIR and WAIT for completion
+   b. IF transcribe_media FAILS (throws error): STOP immediately, do NOT move the file, report: ERROR: {{BASENAME}} -> Transcription failed: <error_message>
+   c. IF transcribe_media SUCCEEDS: ensure DEST_DIR exists; move MEDIA_PATH into DEST_DIR (handle name collisions with suffixes).
 
 Rules:
 
-- Never move the file before transcription when SRT does not exist.
+- CRITICAL: Never move the file before transcription when SRT does not exist.
+- CRITICAL: If transcribe_media fails, do NOT proceed with file operations. Stop and report the error.
 - Output strictly one line, no transcript text.
 - If skipped: SKIPPED: {{BASENAME}} -> MOVED TO: DEST_PATH
 - If done: DONE: {{BASENAME}} -> MOVED TO: DEST_PATH
+- If error: ERROR: {{BASENAME}} -> Transcription failed: <error_message>

@@ -9,36 +9,36 @@ Write-Host ""
 # Check if CUDA is available
 Write-Host "Checking for NVIDIA GPU and CUDA..." -ForegroundColor Yellow
 
+$torchCuda = "cpu"  # Default to CPU
+
 try {
-    $nvccOutput = nvcc --version 2>&1
-    if ($LASTEXITCODE -eq 0) {
+    $nvccOutput = (nvcc --version 2>&1) | Out-String
+    
+    if ($nvccOutput -and $nvccOutput -match "release (\d+)\.(\d+)") {
         Write-Host "✓ CUDA detected" -ForegroundColor Green
-        Write-Host $nvccOutput
+        Write-Host $nvccOutput.Trim()
         
-        # Determine CUDA version
-        if ($nvccOutput -match "release (\d+)\.(\d+)") {
-            $cudaMajor = [int]$matches[1]
-            $cudaMinor = [int]$matches[2]
-            
-            Write-Host ""
-            Write-Host "CUDA Version: $cudaMajor.$cudaMinor" -ForegroundColor Cyan
-            
-            # Recommend PyTorch CUDA version
-            if ($cudaMajor -ge 12) {
-                $torchCuda = "cu124"
-                Write-Host "Recommended PyTorch: CUDA 12.4 build" -ForegroundColor Green
-            } elseif ($cudaMajor -eq 11) {
-                $torchCuda = "cu118"
-                Write-Host "Recommended PyTorch: CUDA 11.8 build" -ForegroundColor Green
-            } else {
-                Write-Host "⚠ Unsupported CUDA version. Defaulting to CPU mode." -ForegroundColor Yellow
-                $torchCuda = "cpu"
-            }
+        $cudaMajor = [int]$matches[1]
+        $cudaMinor = [int]$matches[2]
+        
+        Write-Host "CUDA Version: $cudaMajor.$cudaMinor" -ForegroundColor Cyan
+        
+        # Recommend PyTorch CUDA version
+        if ($cudaMajor -ge 12) {
+            $torchCuda = "cu124"
+            Write-Host "Recommended PyTorch: CUDA 12.4 build" -ForegroundColor Green
+        } elseif ($cudaMajor -eq 11) {
+            $torchCuda = "cu118"
+            Write-Host "Recommended PyTorch: CUDA 11.8 build" -ForegroundColor Green
+        } else {
+            Write-Host "⚠ Unsupported CUDA version. Defaulting to CPU mode." -ForegroundColor Yellow
+            $torchCuda = "cpu"
         }
+    } else {
+        Write-Host "✗ CUDA not detected. Will use CPU mode." -ForegroundColor Yellow
     }
 } catch {
     Write-Host "✗ CUDA not detected. Will use CPU mode." -ForegroundColor Yellow
-    $torchCuda = "cpu"
 }
 
 Write-Host ""

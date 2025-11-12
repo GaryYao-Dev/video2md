@@ -36,7 +36,7 @@ MODEL_MAP = {
 class WhisperClient:
     """
     Local Whisper transcription client using faster-whisper
-    
+
     Features:
     - Automatic model download from Hugging Face
     - CUDA auto-detection with CPU fallback
@@ -69,14 +69,15 @@ class WhisperClient:
         if env_model_size:
             self.model_size = env_model_size
             if model_size and model_size != env_model_size:
-                logger.info(f"Environment variable WHISPER_MODEL_SIZE={env_model_size} overrides parameter model_size={model_size}")
+                logger.info(
+                    f"Environment variable WHISPER_MODEL_SIZE={env_model_size} overrides parameter model_size={model_size}")
         else:
             self.model_size = model_size or "base"
-        
+
         # Device detection
         if device is None:
             device = os.getenv("WHISPER_DEVICE", "auto")
-        
+
         if device == "auto" or device is None:
             self.device = "cuda" if self._is_cuda_available() else "cpu"
         elif device == "cpu":
@@ -85,13 +86,14 @@ class WhisperClient:
             # User requested CUDA, check if available
             self.device = "cuda" if self._is_cuda_available() else "cpu"
             if device == "cuda" and self.device == "cpu":
-                logger.warning("CUDA requested but not available, falling back to CPU")
+                logger.warning(
+                    "CUDA requested but not available, falling back to CPU")
 
         # Compute type configuration
         # GPU uses float16, CPU uses int8 quantization for efficiency
         if compute_type is None:
             compute_type = os.getenv("WHISPER_COMPUTE_TYPE")
-        
+
         self.compute_type = compute_type or (
             "float16" if self.device == "cuda" else "int8"
         )
@@ -99,10 +101,10 @@ class WhisperClient:
         # Model directory setup
         if model_dir is None:
             model_dir = os.getenv("WHISPER_MODEL_DIR", "./models/whisper")
-        
+
         self.model_dir = Path(model_dir)
         self.model_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # CPU threads
         self.cpu_threads = int(os.getenv("WHISPER_CPU_THREADS", cpu_threads))
 
@@ -110,7 +112,8 @@ class WhisperClient:
         model_path = self._get_model_path()
 
         logger.info(f"Initializing Whisper model: {self.model_size}")
-        logger.info(f"Device: {self.device}, Compute type: {self.compute_type}")
+        logger.info(
+            f"Device: {self.device}, Compute type: {self.compute_type}")
         logger.info(f"Model directory: {self.model_dir}")
 
         # Initialize Whisper model
@@ -129,7 +132,7 @@ class WhisperClient:
     def _is_cuda_available() -> bool:
         """
         Check if CUDA is available for GPU acceleration
-        
+
         Returns:
             True if CUDA is available, False otherwise
         """
@@ -139,7 +142,8 @@ class WhisperClient:
                 logger.info("✓ CUDA available, using GPU")
                 return True
             else:
-                logger.info("✗ PyTorch installed but CUDA unavailable, using CPU")
+                logger.info(
+                    "✗ PyTorch installed but CUDA unavailable, using CPU")
                 return False
         except ImportError:
             logger.info("✗ PyTorch not installed, using CPU")
@@ -148,7 +152,7 @@ class WhisperClient:
     def _get_model_path(self) -> str:
         """
         Get model path or Hugging Face repository ID
-        
+
         Returns:
             Local model path if exists, otherwise Hugging Face repo ID
         """
@@ -160,17 +164,19 @@ class WhisperClient:
             cache_dir_name = repo_id.replace("/", "--")
             cache_dir_name = f"models--{cache_dir_name}"
             local_cache_path = self.model_dir / cache_dir_name
-            
+
             if local_cache_path.exists():
                 logger.info(f"Using cached model from: {local_cache_path}")
                 # Return the repo ID - faster-whisper will find it in cache
                 return repo_id
             else:
-                logger.info(f"Model not found in cache, will download from Hugging Face: {repo_id}")
+                logger.info(
+                    f"Model not found in cache, will download from Hugging Face: {repo_id}")
                 return repo_id
         else:
             # Unknown model size, try as-is (could be custom path or repo ID)
-            logger.warning(f"Unknown model size '{self.model_size}', attempting to use as-is")
+            logger.warning(
+                f"Unknown model size '{self.model_size}', attempting to use as-is")
             return self.model_size
 
     def transcribe(
@@ -184,7 +190,7 @@ class WhisperClient:
     ) -> TranscriptResult:
         """
         Transcribe audio file to text with timestamps
-        
+
         Args:
             audio_file_path: Path to audio file
             language: Language code (e.g., 'zh', 'en'). None for auto-detection
@@ -192,10 +198,10 @@ class WhisperClient:
             initial_prompt: Initial prompt to guide the model
             word_timestamps: Enable word-level timestamps
             vad_filter: Enable voice activity detection filter
-            
+
         Returns:
             TranscriptResult with language, full text, and segments
-            
+
         Raises:
             FileNotFoundError: If audio file doesn't exist
             Exception: If transcription fails
@@ -214,13 +220,13 @@ class WhisperClient:
                 "language": language,
                 "task": task,
             }
-            
+
             if initial_prompt:
                 transcribe_params["initial_prompt"] = initial_prompt
-            
+
             if word_timestamps:
                 transcribe_params["word_timestamps"] = True
-            
+
             if vad_filter:
                 transcribe_params["vad_filter"] = True
 
@@ -257,12 +263,34 @@ class WhisperClient:
             )
 
             logger.info(f"Transcription completed: {len(segments)} segments")
-            logger.info(f"Detected language: {info.language} (probability: {info.language_probability:.2f})")
+            logger.info(
+                f"Detected language: {info.language} (probability: {info.language_probability:.2f})")
             logger.info(f"Duration: {info.duration:.2f}s")
 
             return result
 
         except Exception as e:
+            error_str = str(e).lower()
+
+            # Check if it's a CUDA OOM error
+            if "out of memory" in error_str and "cuda" in error_str:
+                logger.error(f"CUDA out of memory error detected")
+
+                # Suggest fallback strategies
+                fallback_msg = (
+                    f"CUDA out of memory error. Suggestions:\n"
+                    f"1. Use a smaller model (current: {self.model_size})\n"
+                    f"2. Set WHISPER_DEVICE=cpu in .env file\n"
+                    f"3. Reduce compute type (current: {self.compute_type})\n"
+                    f"4. Close other GPU applications"
+                )
+                logger.error(fallback_msg)
+                raise RuntimeError(
+                    f"CUDA out of memory while transcribing {audio_path.name}. "
+                    f"Try using a smaller model or CPU mode."
+                ) from e
+
+            # Re-raise other errors
             logger.error(f"Transcription failed: {e}")
             raise
 
@@ -277,7 +305,7 @@ class WhisperClient:
     ) -> TranscriptResult:
         """
         Transcribe video file (extracts audio first, then transcribes)
-        
+
         Args:
             video_file_path: Path to video file
             language: Language code (e.g., 'zh', 'en'). None for auto-detection
@@ -285,20 +313,20 @@ class WhisperClient:
             initial_prompt: Initial prompt to guide the model
             word_timestamps: Enable word-level timestamps
             vad_filter: Enable voice activity detection filter
-            
+
         Returns:
             TranscriptResult with language, full text, and segments
         """
         # Import video converter
         from video2md.utils.video_converter import VideoConverter
         import tempfile
-        
+
         video_path = Path(video_file_path)
         if not video_path.exists():
             raise FileNotFoundError(f"Video file not found: {video_file_path}")
-        
+
         converter = VideoConverter()
-        
+
         # Check if it's a video file
         if not converter.is_video_file(video_path):
             # If it's already an audio file, just transcribe directly
@@ -313,10 +341,11 @@ class WhisperClient:
                     vad_filter=vad_filter,
                 )
             else:
-                raise ValueError(f"Unsupported file format: {video_path.suffix}")
-        
+                raise ValueError(
+                    f"Unsupported file format: {video_path.suffix}")
+
         logger.info(f"Extracting audio from video: {video_path.name}")
-        
+
         # Convert video to audio
         temp_dir = tempfile.gettempdir()
         audio_file = converter.video_to_audio(
@@ -326,7 +355,7 @@ class WhisperClient:
             sample_rate=16000,  # Whisper recommended sample rate
             channels=1          # Mono
         )
-        
+
         try:
             # Transcribe the extracted audio
             result = self.transcribe(
@@ -337,9 +366,9 @@ class WhisperClient:
                 word_timestamps=word_timestamps,
                 vad_filter=vad_filter,
             )
-            
+
             return result
-        
+
         finally:
             # Clean up temporary audio file
             try:
@@ -354,9 +383,11 @@ def main():
     Command-line interface for Whisper client
     """
     import argparse
-    
-    parser = argparse.ArgumentParser(description="Local Whisper transcription client")
-    parser.add_argument("input_file", type=str, help="Audio or video file to transcribe")
+
+    parser = argparse.ArgumentParser(
+        description="Local Whisper transcription client")
+    parser.add_argument("input_file", type=str,
+                        help="Audio or video file to transcribe")
     parser.add_argument(
         "--model-size",
         type=str,
@@ -397,25 +428,25 @@ def main():
         choices=["txt", "json"],
         help="Output format (default: txt)"
     )
-    
+
     args = parser.parse_args()
-    
+
     # Initialize client
     client = WhisperClient(
         model_size=args.model_size,
         device=args.device,
     )
-    
+
     # Transcribe
     input_path = Path(args.input_file)
     if not input_path.exists():
         print(f"Error: File not found: {args.input_file}")
         return 1
-    
+
     # Check if it's video or audio
     from video2md.utils.video_converter import VideoConverter
     converter = VideoConverter()
-    
+
     if converter.is_video_file(input_path):
         result = client.transcribe_with_video(
             video_file_path=str(input_path),
@@ -428,7 +459,7 @@ def main():
             language=args.language,
             task=args.task,
         )
-    
+
     # Output results
     if args.format == "json":
         import json
@@ -436,7 +467,7 @@ def main():
         output = json.dumps(asdict(result), ensure_ascii=False, indent=2)
     else:
         output = result.full_text
-    
+
     if args.output:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -444,7 +475,7 @@ def main():
         print(f"Results saved to: {args.output}")
     else:
         print(output)
-    
+
     return 0
 
 

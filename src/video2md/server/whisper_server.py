@@ -35,43 +35,63 @@ async def transcribe_media(media_file_path: str, output_dir: Optional[str] = Non
     -------
     str
       SRT formatted transcription content with timestamps.
+
+    Raises
+    ------
+    Exception
+      If transcription fails for any reason (e.g., CUDA OOM, file not found, etc.)
     """
     # Run blocking I/O in a thread so we don't block the event loop
     def _transcribe():
-        client = get_whisper_client()
-        media_path = Path(media_file_path)
-        
-        # Check if it's a video or audio file
-        from video2md.utils.video_converter import VideoConverter
-        converter = VideoConverter()
-        
-        # Transcribe (handles both video and audio)
-        if converter.is_video_file(media_path):
-            result = client.transcribe_with_video(
-                video_file_path=str(media_path),
-                language=None,  # Auto-detect
-            )
-        else:
-            result = client.transcribe(
-                audio_file_path=str(media_path),
-                language=None,  # Auto-detect
-            )
-        
-        # Save to output directory if specified
-        if output_dir:
-            output_path = Path(output_dir)
-            output_path.mkdir(parents=True, exist_ok=True)
-            
-            # Save as SRT and TXT
-            base_name = media_path.stem
-            save_transcript(result, output_path / f"{base_name}.srt", format="srt")
-            save_transcript(result, output_path / f"{base_name}.txt", format="txt")
-            save_transcript(result, output_path / f"{base_name}.json", format="json")
-        
-        # Return SRT content for backward compatibility
-        from video2md.utils.transcript_converter import transcript_to_srt
-        return transcript_to_srt(result)
-    
+        try:
+            client = get_whisper_client()
+            media_path = Path(media_file_path)
+
+            # Check if file exists
+            if not media_path.exists():
+                raise FileNotFoundError(
+                    f"Media file not found: {media_file_path}")
+
+            # Check if it's a video or audio file
+            from video2md.utils.video_converter import VideoConverter
+            converter = VideoConverter()
+
+            # Transcribe (handles both video and audio)
+            if converter.is_video_file(media_path):
+                result = client.transcribe_with_video(
+                    video_file_path=str(media_path),
+                    language=None,  # Auto-detect
+                )
+            else:
+                result = client.transcribe(
+                    audio_file_path=str(media_path),
+                    language=None,  # Auto-detect
+                )
+
+            # Save to output directory if specified
+            if output_dir:
+                output_path = Path(output_dir)
+                output_path.mkdir(parents=True, exist_ok=True)
+
+                # Save as SRT and TXT
+                base_name = media_path.stem
+                save_transcript(result, output_path /
+                                f"{base_name}.srt", format="srt")
+                save_transcript(result, output_path /
+                                f"{base_name}.txt", format="txt")
+                save_transcript(result, output_path /
+                                f"{base_name}.json", format="json")
+
+            # Return SRT content for backward compatibility
+            from video2md.utils.transcript_converter import transcript_to_srt
+            return transcript_to_srt(result)
+
+        except Exception as e:
+            # Re-raise with clear error message to stop agent execution
+            error_msg = f"Transcription failed for {media_file_path}: {str(e)}"
+            raise RuntimeError(error_msg) from e
+
+    # This will propagate any exceptions from _transcribe to the MCP client
     result = await asyncio.to_thread(_transcribe)
     return result
 
