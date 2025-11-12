@@ -216,24 +216,64 @@ SERPER_API_KEY=your-actual-serper-key-here
 
 - **Python 3.11+** (required for modern AI libraries)
 - **uv** package manager (handles dependencies automatically)
-- **FFmpeg** (for video/audio processing) - install via:
+- **FFmpeg** (for video/audio processing) - **REQUIRED**
+- **Node.js** (for MCP servers) - **REQUIRED**
 
-  ```bash
-  # macOS
-  brew install ffmpeg
+### Installing Required Dependencies
 
-  # Ubuntu/Debian
-  sudo apt install ffmpeg
+Video2MD will automatically check for required dependencies on startup. If any are missing, you'll see clear installation instructions.
 
-  # Windows (via chocolatey)
-  choco install ffmpeg
-  ```
+**FFmpeg Installation:**
+
+```bash
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt install ffmpeg
+
+# Windows (via chocolatey)
+choco install ffmpeg
+
+# Windows (via winget)
+winget install ffmpeg
+```
+
+**Node.js Installation:**
+
+```bash
+# macOS
+brew install node
+
+# Ubuntu/Debian
+sudo apt install nodejs npm
+
+# Windows
+# Download from https://nodejs.org/
+# Or use package manager:
+choco install nodejs
+winget install OpenJS.NodeJS
+```
+
+### Verifying Dependencies
+
+You can manually check if all dependencies are installed:
+
+```bash
+# Check FFmpeg
+ffmpeg -version
+
+# Check Node.js
+node --version
+
+# Or use the built-in dependency checker
+uv run python -c "from video2md.utils import DependencyChecker; DependencyChecker.validate_or_exit()"
+```
 
 ### Optional Dependencies
 
 For enhanced functionality, Video2MD can use:
 
-- **Node.js** (for additional MCP servers)
 - **OpenAI API key** (for transcription and summarization)
 - **Web search APIs** (Brave, Serper) for enhanced research
 - **GPU Support** (NVIDIA GPU with CUDA) - See GPU Installation below
@@ -297,7 +337,9 @@ Understanding the organization:
 
 **"No module named 'video2md'"**: Run `uv sync` to install dependencies
 
-**"FFmpeg not found"**: Install FFmpeg using the commands above
+**"FFmpeg not found" or "Node.js not found"**: The application will automatically detect missing dependencies on startup and show installation instructions. Install the missing dependencies and try again.
+
+**Application hangs or crashes on startup**: This is usually caused by missing FFmpeg or Node.js. Check the startup logs for dependency check results.
 
 **Slow processing**: The Research agent may timeout on slow websites (this is normal and won't break processing)
 

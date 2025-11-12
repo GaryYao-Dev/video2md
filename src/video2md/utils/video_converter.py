@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional, Union
 import logging
+from .dependency_checker import DependencyChecker
 
 # Get logger (don't configure here, let the application configure it)
 logger = logging.getLogger(__name__)
@@ -34,14 +35,11 @@ class VideoConverter:
 
     def _check_ffmpeg(self):
         """Check if ffmpeg is installed on the system"""
-        try:
-            subprocess.run(['ffmpeg', '-version'],
-                           capture_output=True, check=True)
-            logger.info("FFmpeg check passed")
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        is_available, message = DependencyChecker.check_ffmpeg()
+        if not is_available:
             logger.error("FFmpeg not found. Please install FFmpeg to use VideoConverter.")
-            raise RuntimeError(
-                "FFmpeg not installed or unavailable. Please install FFmpeg first: brew install ffmpeg (macOS)")
+            raise RuntimeError(f"FFmpeg not available.\n\n{message}")
+        logger.info(message)
 
     def is_video_file(self, file_path: Union[str, Path]) -> bool:
         """Check if file is a supported video format"""

@@ -16,6 +16,7 @@ from __future__ import annotations
 from video2md.agents.summarize_host import summarize_host
 from video2md.agents.research_host import research_host
 from video2md.agents.whisper_host import whisper_host
+from video2md.utils.dependency_checker import DependencyChecker
 
 from pathlib import Path
 import asyncio
@@ -119,6 +120,10 @@ async def process_selected(selected_rel_paths: List[str], prompt_variant: str = 
 
 
 def main():  # pragma: no cover - placeholder only
+    # Check dependencies before starting UI
+    print("Checking dependencies...")
+    DependencyChecker.validate_or_exit(require_ffmpeg=True, require_node=True)
+    
     if gr is None:
         print("Gradio is not installed yet. Install with: pip install gradio>=4")
         return
