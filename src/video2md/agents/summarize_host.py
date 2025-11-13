@@ -11,8 +11,15 @@ async def summarize_host(
     srts: List[str],
     researcher_results: List[Dict],
     model: str = "gpt-5-nano",
+    enable_trace: bool = True,
 ) -> List[str]:
     """Create markdown summaries integrating transcript and research; embed original media.
+
+    Args:
+        srts: List of SRT file paths
+        researcher_results: Research results from research_host
+        model: LLM model name
+        enable_trace: Whether to create trace for this agent (set False if parent already has trace)
 
     Returns a list of generated markdown file paths.
     """
@@ -52,7 +59,17 @@ async def summarize_host(
             instructions=system_prompt,
         )
 
-        with trace(f"Summarizer Agent Runner: {file_name}"):
+        # Only create trace if enable_trace is True
+        if enable_trace:
+            # Use file_name as group_id to group all agents for the same media file
+            with trace(
+                workflow_name=f"Summarizer Agent Runner: {file_name}",
+                group_id=file_name
+            ):
+                res = await Runner.run(agent, input=agent_input)
+                body_md = res.final_output or ""
+        else:
+            # Run without creating a new trace (parent trace will be used)
             res = await Runner.run(agent, input=agent_input)
             body_md = res.final_output or ""
 

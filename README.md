@@ -82,6 +82,7 @@ The easiest way to use Video2MD is through the web interface:
 
    - Open your browser to the displayed URL (usually http://localhost:7860)
    - Upload videos or select existing files
+   - **Choose transcription method** (Local Whisper or OpenAI Transcription)
    - Click "Go" to process
    - Preview results instantly in the browser
 
@@ -109,10 +110,14 @@ Video2MD uses three specialized AI agents working together:
 
 ### 1. 🎧 Whisper Agent - Transcription
 
-- Converts video/audio to accurate text using OpenAI Whisper
+- Supports **two transcription methods**:
+  - **Local Whisper** - Free, runs on your hardware using faster-whisper
+  - **OpenAI Transcription** - Cloud-based using gpt-4o-transcribe model
+- Converts video/audio to accurate text
 - Handles multiple languages and accents
 - Generates both clean text and timestamped subtitles
 - Supports Chinese simplified/traditional conversion
+- **Group ID tracing** - All agent operations for the same media file are grouped together for easy tracking
 
 ### 2. 🔍 Research Agent - Context Enhancement
 
@@ -143,8 +148,11 @@ Each agent runs independently and can handle multiple files in parallel for effi
 Video2MD includes standalone tools for specific tasks:
 
 ```bash
-# Transcribe videos directly
+# Transcribe videos with local Whisper
 uv run video2md-whisper-client your-video.mp4
+
+# Transcribe videos with OpenAI API
+uv run video2md-openai-transcribe-client your-video.mp4 --language zh
 
 # Convert video to audio (useful for audio-only processing)
 uv run video2md-video-converter --format wav your-video.mp4
@@ -190,9 +198,11 @@ Then edit the `.env` file with your specific configuration:
 
 | Variable          | Description                          | Example                 | Required |
 | ----------------- | ------------------------------------ | ----------------------- | -------- |
-| `WHISPER_API_URL` | URL for Whisper transcription server | `http://localhost:8000` | Yes      |
+| `WHISPER_API_URL` | URL for Whisper transcription server | `http://localhost:8000` | No\*     |
 | `OPENAI_API_KEY`  | OpenAI API key for AI processing     | `sk-proj-...`           | Yes      |
 | `SERPER_API_KEY`  | Serper API key for web search        | `your_serper_key_here`  | Yes      |
+
+\* _Required only if using local Whisper transcription server mode_
 
 **Example `.env` file:**
 
@@ -210,8 +220,11 @@ SERPER_API_KEY=your-actual-serper-key-here
 **Getting API Keys:**
 
 - **OpenAI API Key**: Sign up at [OpenAI Platform](https://platform.openai.com/) and create an API key
+  - Required for AI agents and OpenAI transcription method
 - **Serper API Key**: Register at [Serper](https://serper.dev/) for web search functionality
-- **Whisper API URL**: This should point to your Whisper server (default: `http://localhost:8000`)
+- **Whisper API URL**: Only needed if running a separate Whisper server (default: local processing)
+
+For more details on transcription methods, see [`docs/OPENAI_TRANSCRIPTION.md`](docs/OPENAI_TRANSCRIPTION.md).
 
 ## 📋 Requirements
 
@@ -325,9 +338,13 @@ Understanding the organization:
 - **`input/`** - Drop your video files here
 - **`output/`** - Processed results appear here (one folder per video)
 - **`prompts/`** - AI prompt templates (customize behavior here)
+- **`docs/`** - Documentation
+  - `OPENAI_TRANSCRIPTION.md` - Guide for OpenAI transcription feature
+  - `GPU_SUPPORT.md` - GPU setup instructions
+  - `LOCAL_WHISPER_GUIDE.md` - Local Whisper configuration
 - **`src/video2md/`** - Core processing engine
   - `agents/` - The three AI agents (Whisper, Research, Summary)
-  - `clients/` - Communication with external services
+  - `clients/` - Communication with external services (Whisper, OpenAI)
   - `tools/` - Individual command-line utilities
   - `utils/` - Helper functions for video/text processing
 - **`ui/`** - Web interface code

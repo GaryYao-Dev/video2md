@@ -15,6 +15,7 @@ async def research_host(
     model: str = "gpt-5-nano",
     prompt_variant: str = "github_project",
     user_notes: str | None = None,
+    enable_trace: bool = True,
 ) -> List[Dict[str, Any]]:
     """Run the Researcher agent across transcripts and return results per file.
 
@@ -27,6 +28,7 @@ async def research_host(
         user_notes: Optional extra context provided by the user to bias search
             (e.g., product spec hints, author commentary). Strongly prioritized
             over raw transcript tokens when conflicts arise.
+        enable_trace: Whether to create trace for this agent (set False if parent already has trace)
     """
     # Load variant system instructions
     system_prompt = prompts.load(f"researcher_instructions/{prompt_variant}")
@@ -73,7 +75,20 @@ async def research_host(
                 PROMPT_VARIANT=prompt_variant,
             )
 
-            with trace(f"Researcher Agent Runner: {file_name}"):
+            # Only create trace if enable_trace is True
+            if enable_trace:
+                # Use file_name as group_id to group all agents for the same media file
+                with trace(
+                    workflow_name=f"Researcher Agent Runner: {file_name}",
+                    group_id=file_name
+                ):
+                    res = await Runner.run(
+                        agent,
+                        input=message,
+                        max_turns=20,
+                    )
+            else:
+                # Run without creating a new trace (parent trace will be used)
                 res = await Runner.run(
                     agent,
                     input=message,

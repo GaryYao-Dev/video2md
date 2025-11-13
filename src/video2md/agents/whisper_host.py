@@ -6,7 +6,7 @@ from agents import Agent, Runner, trace
 from agents.mcp import MCPServerStdio
 
 from video2md.prompt_loader import default_loader as prompts
-from video2md.server.mcp_params import whisper_params, files_params
+from video2md.server.mcp_params import whisper_params, openai_transcribe_params, files_params
 
 
 async def whisper_host(
@@ -14,18 +14,34 @@ async def whisper_host(
     media_move_root: str = "output",
     model: str = "gpt-4o-mini",
     selected_files: Optional[List[str]] = None,
+    transcribe_method: str = "local",
+    enable_trace: bool = True,
 ) -> List[str]:
     """Transcribe media in a directory via MCP tools, then move files.
+
+    Args:
+        input_dir: Directory containing media files
+        media_move_root: Directory to move processed media files
+        model: LLM model for the agent
+        selected_files: List of specific files to process (relative paths)
+        transcribe_method: 'local' for faster-whisper or 'openai' for OpenAI API
+        enable_trace: Whether to create trace for this agent (set False if parent already has trace)
 
     Returns a list of generated SRT paths.
     """
     system_prompt = prompts.load("whisper_host_instructions")
 
-    # Configure MCP servers
-    params = [
-        {"param": whisper_params, "client_session_timeout_seconds": 600},
-        {"param": files_params, "client_session_timeout_seconds": 60},
-    ]
+    # Configure MCP servers based on transcription method
+    if transcribe_method == "openai":
+        params = [
+            {"param": openai_transcribe_params, "client_session_timeout_seconds": 600},
+            {"param": files_params, "client_session_timeout_seconds": 60},
+        ]
+    else:  # default to local
+        params = [
+            {"param": whisper_params, "client_session_timeout_seconds": 600},
+            {"param": files_params, "client_session_timeout_seconds": 60},
+        ]
 
     async with AsyncExitStack() as stack:
         mcp_servers = [
@@ -84,7 +100,16 @@ async def whisper_host(
                 BASENAME=base_name,
             )
 
-            with trace(f"Whisper Host Agent Runner: {media_file.name}"):
+            # Only create trace if enable_trace is True
+            if enable_trace:
+                # Use base_name as group_id to group all agents for the same media file
+                with trace(
+                    workflow_name=f"Whisper Host Agent Runner: {media_file.name}",
+                    group_id=base_name
+                ):
+                    return await Runner.run(agent, input=message)
+            else:
+                # Run without creating a new trace (parent trace will be used)
                 return await Runner.run(agent, input=message)
 
         if not target.exists() or not target.is_dir():

@@ -75,10 +75,12 @@ mcp-servers = [
 
 [project.scripts]
 video2md-whisper-client = "video2md.clients.whisper_client:main"
+video2md-openai-transcribe-client = "video2md.clients.openai_transcribe_client:main"
 video2md-video-converter = "video2md.tools.video_converter_tool:main"
 video2md-chinese-converter = "video2md.tools.chinese_converter_tool:main"
 video2md-transcript-converter = "video2md.utils.transcript_converter:main"
 video2md-whisper-server = "video2md.server.whisper_server:main"
+video2md-openai-transcribe-server = "video2md.server.openai_transcribe_server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

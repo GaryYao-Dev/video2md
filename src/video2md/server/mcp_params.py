@@ -53,6 +53,12 @@ whisper_params = {
     "args": ["-m", "video2md.server.whisper_server"],
 }
 
+# OpenAI Transcribe server parameters
+openai_transcribe_params = {
+    "command": _get_python_executable(),
+    "args": ["-m", "video2md.server.openai_transcribe_server"],
+}
+
 # Filesystem server parameters
 # If a local/global install exists (recommended), use it; otherwise fall back to npx.
 _fs_cmd_override = os.getenv(

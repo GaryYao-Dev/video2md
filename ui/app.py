@@ -17,12 +17,15 @@ from video2md.agents.summarize_host import summarize_host
 from video2md.agents.research_host import research_host
 from video2md.agents.whisper_host import whisper_host
 from video2md.utils.dependency_checker import DependencyChecker
+from agents import trace  # Import trace for creating unified workflow
 
 from pathlib import Path
 import asyncio
+import json
 import re
 import shutil
 import tempfile
+import webbrowser
 from typing import List, Tuple
 
 try:
@@ -104,14 +107,15 @@ def _is_video_file(name: str) -> bool:
     return Path(name).suffix.lower() in video_exts
 
 
-async def process_selected(selected_rel_paths: List[str], prompt_variant: str = "github_project", user_notes: str = "") -> List[str]:
+async def process_selected(selected_rel_paths: List[str], transcribe_method: str = "local", prompt_variant: str = "github_project", user_notes: str = "") -> List[str]:
     """Run the end-to-end pipeline only for selected input files.
 
     selected_rel_paths: file paths relative to ./input
+    transcribe_method: 'local' for faster-whisper or 'openai' for OpenAI API
     Returns list of generated markdown summary paths.
     """
     # Run whisper only for the selected list
-    srts = await whisper_host(input_dir=str(INPUT_DIR), selected_files=selected_rel_paths)
+    srts = await whisper_host(input_dir=str(INPUT_DIR), selected_files=selected_rel_paths, transcribe_method=transcribe_method)
     if not srts:
         return []
     research = await research_host(srts, prompt_variant=prompt_variant, user_notes=user_notes)
@@ -144,6 +148,16 @@ def main():  # pragma: no cover - placeholder only
                 input_files = gr.CheckboxGroup(
                     choices=_list_media_in_input(),
                     label="Select media files to process",
+                )
+
+                transcribe_method = gr.Radio(
+                    choices=[
+                        ("Local Whisper (faster-whisper)", "local"),
+                        ("OpenAI Whisper API (whisper-1)", "openai"),
+                    ],
+                    value="local",
+                    label="Transcription Method",
+                    info="Choose between local Whisper or OpenAI's cloud transcription API",
                 )
 
                 prompt_select = gr.Dropdown(
@@ -182,6 +196,8 @@ def main():  # pragma: no cover - placeholder only
                 # Download button for the whole folder
                 folder_download = gr.File(
                     label="Download Folder", visible=False, interactive=False)
+                # View Trace button (only visible when trace_id exists)
+                trace_btn = gr.Button("🔍 View Trace on OpenAI", visible=False, size="sm")
                 # Responsive player style (limit height, fit width)
                 gr.HTML("""
                 <style>
@@ -331,26 +347,67 @@ def main():  # pragma: no cover - placeholder only
                 # Folder download
                 zip_path = _create_folder_zip(basename)
                 folder_visible = zip_path is not None
+                
+                # Check if trace_id exists in JSON
+                json_path = base_dir / f"{basename}.json"
+                trace_btn_visible = False
+                if json_path.exists():
+                    try:
+                        with open(json_path, 'r', encoding='utf-8') as f:
+                            json_data = json.load(f)
+                        trace_btn_visible = 'trace_id' in json_data and json_data['trace_id']
+                    except:
+                        pass
             else:
                 md_display, media_path, txt_text, srt_text = "", None, "", ""
                 zip_path, folder_visible = None, False
+                trace_btn_visible = False
             return (
                 gr.update(value=md_display),
                 gr.update(value=media_path),
                 gr.update(value=txt_text),
                 gr.update(value=srt_text),
                 gr.update(value=zip_path, visible=folder_visible),
+                gr.update(visible=trace_btn_visible),
             )
 
         base_list.change(_load_all_previews, inputs=base_list,
-                         outputs=[md_preview, md_video, txt_code, srt_code, folder_download])
+                         outputs=[md_preview, md_video, txt_code, srt_code, folder_download, trace_btn])
 
         # Initialize preview on page load if there's a default selection
         demo.load(_load_all_previews, inputs=base_list,
-                  outputs=[md_preview, md_video, txt_code, srt_code, folder_download])
+                  outputs=[md_preview, md_video, txt_code, srt_code, folder_download, trace_btn])
+
+        # Open trace page in browser
+        def _open_trace_page(basename: str):
+            if not basename:
+                gr.Warning("No file selected")
+                return
+            
+            json_path = OUTPUT_DIR / basename / f"{basename}.json"
+            if not json_path.exists():
+                gr.Warning(f"JSON file not found: {json_path}")
+                return
+            
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    json_data = json.load(f)
+                
+                trace_id = json_data.get('trace_id')
+                if not trace_id:
+                    gr.Warning("No trace_id found in JSON file. Process the file first to generate trace_id.")
+                    return
+                
+                url = f"https://platform.openai.com/logs/trace?trace_id={trace_id}"
+                webbrowser.open(url)
+                gr.Info(f"Opening trace page for {basename}")
+            except Exception as e:
+                gr.Warning(f"Error opening trace page: {e}")
+        
+        trace_btn.click(_open_trace_page, inputs=base_list)
 
         # Run pipeline for selected inputs only
-        async def on_run(selected: List[str], prompt_variant: str, notes: str):
+        async def on_run(selected: List[str], transcribe_method: str, prompt_variant: str, notes: str):
             log = ""
 
             def step(msg: str):
@@ -365,66 +422,157 @@ def main():  # pragma: no cover - placeholder only
 
             # Initial message
             yield step(f"Start processing {len(selected)} file(s): {', '.join(selected)}"), gr.update(), gr.update()
+            yield step(f"Transcription method: {transcribe_method}"), gr.update(), gr.update()
+            
             try:
-                yield step("Running transcription (whisper)..."), gr.update(), gr.update()
-                srts = await whisper_host(input_dir=str(INPUT_DIR), selected_files=selected)
-                # After transcription: refresh basename list; most media are moved -> refresh input list and clear selections
-                yield step(f"Transcription done: {len(srts)} SRT"), gr.update(choices=_list_basenames()), gr.update(choices=_list_media_in_input(), value=[])
-
-                if not srts:
-                    yield step("No SRTs produced; stopping."), gr.update(), gr.update()
-                    return
-
-                # New per-file flow: for each SRT, run Researcher -> Summarizer sequentially, but
-                # process multiple files concurrently.
-                yield step("Starting per-file pipelines (research -> summarize)..."), gr.update(), gr.update()
-
+                # Process each file with unified trace workflow
+                yield step("Starting unified pipelines (transcribe -> research -> summarize)..."), gr.update(), gr.update()
+                
                 # Limit concurrency to avoid spawning too many MCP servers at once
-                # max_parallel = min(3, max(1, len(srts)))
                 max_parallel = 2
                 sem = asyncio.Semaphore(max_parallel)
-
-                async def process_one(srt_path: str) -> tuple[str, str | None]:
-                    fname = Path(srt_path).stem
-                    async with sem:
-                        # Research for a single file
-                        try:
-                            research_res = await research_host([srt_path], prompt_variant=prompt_variant, user_notes=notes)
-                            # Summarize for the same single file
-                            md_paths = await summarize_host([srt_path], research_res)
-                            md_path = md_paths[0] if md_paths else None
-                            return fname, md_path
-                        except Exception as e:
-                            return fname, None
-
+                
+                # Store trace URLs and status updates for display
+                trace_urls = {}
+                status_messages = []
+                
+                def log_status(msg: str):
+                    """Thread-safe status logging"""
+                    status_messages.append(msg)
+                
+                async def process_one_complete(media_file: str) -> tuple[str, str | None, str | None]:
+                    """Process one media file through the complete pipeline with unified trace"""
+                    fname_with_ext = Path(media_file).name
+                    fname = Path(media_file).stem
+                    
+                    # Create unified trace workflow for this file
+                    t = trace(
+                        workflow_name=f"video2MD: {fname}",
+                        group_id=fname
+                    )
+                    
+                    # Store trace URL immediately
+                    trace_url = f"https://platform.openai.com/logs/trace?trace_id={t.trace_id}"
+                    trace_urls[fname] = trace_url
+                    
+                    with t:
+                        async with sem:
+                            try:
+                                # Step 1: Transcribe
+                                log_status(f"[{fname}] 🎤 Starting transcription ({transcribe_method})...")
+                                srts = await whisper_host(
+                                    input_dir=str(INPUT_DIR),
+                                    selected_files=[media_file],
+                                    transcribe_method=transcribe_method,
+                                    enable_trace=False  # Disable internal trace
+                                )
+                                
+                                if not srts:
+                                    log_status(f"[{fname}] ❌ Transcription failed")
+                                    return fname, None, t.trace_id
+                                
+                                srt_path = srts[0]
+                                log_status(f"[{fname}] ✅ Transcription completed")
+                                
+                                # Step 2: Research
+                                log_status(f"[{fname}] 🔍 Starting research ({prompt_variant})...")
+                                research_res = await research_host(
+                                    [srt_path],
+                                    prompt_variant=prompt_variant,
+                                    user_notes=notes,
+                                    enable_trace=False  # Disable internal trace
+                                )
+                                log_status(f"[{fname}] ✅ Research completed")
+                                
+                                # Step 3: Summarize
+                                log_status(f"[{fname}] 📝 Starting summarization...")
+                                md_paths = await summarize_host(
+                                    [srt_path],
+                                    research_res,
+                                    enable_trace=False  # Disable internal trace
+                                )
+                                
+                                md_path = md_paths[0] if md_paths else None
+                                
+                                if md_path:
+                                    log_status(f"[{fname}] ✅ Summarization completed")
+                                    
+                                    # Save trace_id to JSON file
+                                    json_path = OUTPUT_DIR / fname / f"{fname}.json"
+                                    if json_path.exists():
+                                        try:
+                                            with open(json_path, 'r', encoding='utf-8') as f:
+                                                json_data = json.load(f)
+                                            json_data['trace_id'] = t.trace_id
+                                            with open(json_path, 'w', encoding='utf-8') as f:
+                                                json.dump(json_data, f, ensure_ascii=False, indent=2)
+                                            log_status(f"[{fname}] 💾 Saved trace_id to JSON")
+                                        except Exception as e:
+                                            print(f"Error saving trace_id to JSON: {e}")
+                                else:
+                                    log_status(f"[{fname}] ⚠️  Summarization produced no output")
+                                
+                                return fname, md_path, t.trace_id
+                                
+                            except Exception as e:
+                                log_status(f"[{fname}] ❌ Error: {e}")
+                                print(f"Error processing {fname}: {e}")
+                                return fname, None, t.trace_id
+                
                 # Launch all tasks
-                tasks = [asyncio.create_task(process_one(s)) for s in srts]
-
+                tasks = [asyncio.create_task(process_one_complete(f)) for f in selected]
+                
+                # Give tasks a moment to create trace objects and populate trace_urls
+                await asyncio.sleep(0.1)
+                
+                # Display trace URLs for all files being processed
+                if trace_urls:
+                    yield step("=" * 60), gr.update(), gr.update()
+                    for fname, url in trace_urls.items():
+                        yield step(f"🔍 Trace for {fname}:\n   {url}"), gr.update(), gr.update()
+                    yield step("=" * 60), gr.update(), gr.update()
+                
+                # Monitor status updates while tasks are running
                 completed = 0
                 summaries_created: list[str] = []
-                for coro in asyncio.as_completed(tasks):
-                    fname, md_path = await coro
-                    completed += 1
-                    if md_path:
-                        summaries_created.append(md_path)
-                        msg = f"[{completed}/{len(srts)}] Done: {fname} -> {md_path}"
-                    else:
-                        msg = f"[{completed}/{len(srts)}] Failed: {fname} (see logs)"
-
-                    # Incremental UI refresh so user can preview as items finish
-                    yield step(msg), gr.update(choices=_list_basenames()), gr.update(choices=_list_media_in_input(), value=[])
-
+                last_status_count = 0
+                
+                while tasks:
+                    # Check for new status messages
+                    if len(status_messages) > last_status_count:
+                        for msg in status_messages[last_status_count:]:
+                            yield step(msg), gr.update(), gr.update()
+                        last_status_count = len(status_messages)
+                    
+                    # Check for completed tasks
+                    done, tasks = await asyncio.wait(tasks, timeout=0.5, return_when=asyncio.FIRST_COMPLETED)
+                    
+                    for task in done:
+                        fname, md_path, trace_id = await task
+                        completed += 1
+                        if md_path:
+                            summaries_created.append(md_path)
+                            msg = f"🎉 [{completed}/{len(selected)}] Complete: {fname} -> {md_path}"
+                        else:
+                            msg = f"❌ [{completed}/{len(selected)}] Failed: {fname}"
+                        
+                        yield step(msg), gr.update(choices=_list_basenames()), gr.update(choices=_list_media_in_input(), value=[])
+                
+                # Display any remaining status messages
+                if len(status_messages) > last_status_count:
+                    for msg in status_messages[last_status_count:]:
+                        yield step(msg), gr.update(), gr.update()
+                
                 # Final summary
                 if summaries_created:
                     yield (
-                        step("All summarizations completed."),
+                        step("All pipelines completed."),
                         gr.update(choices=_list_basenames()),
                         gr.update(choices=_list_media_in_input(), value=[]),
                     )
                 else:
                     yield (
-                        step(
-                            "Summarization stage completed, but no Markdown files were generated."),
+                        step("Pipelines completed, but no Markdown files were generated."),
                         gr.update(choices=_list_basenames()),
                         gr.update(choices=_list_media_in_input(), value=[]),
                     )
@@ -433,7 +581,7 @@ def main():  # pragma: no cover - placeholder only
                 yield step(f"Error occurred: {e}"), gr.update(choices=_list_basenames()), gr.update(choices=_list_media_in_input(), value=[])
 
         # Note: on_run now returns three outputs: logs, basename dropdown, and input file checkbox group
-        run_btn.click(on_run, inputs=[input_files, prompt_select, user_notes],
+        run_btn.click(on_run, inputs=[input_files, transcribe_method, prompt_select, user_notes],
                       outputs=[log_output, base_list, input_files])
 
         # Timer: background refresh for input list to reduce manual refresh actions
