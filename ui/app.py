@@ -196,7 +196,7 @@ def main():  # pragma: no cover - placeholder only
                 # Download button for the whole folder
                 folder_download = gr.File(
                     label="Download Folder", visible=False, interactive=False)
-                # View Trace button (only visible when trace_id exists)
+                # View Trace button
                 trace_btn = gr.Button("🔍 View Trace on OpenAI", visible=False, size="sm")
                 # Responsive player style (limit height, fit width)
                 gr.HTML("""
@@ -380,7 +380,8 @@ def main():  # pragma: no cover - placeholder only
                   outputs=[md_preview, md_video, txt_code, srt_code, folder_download, trace_btn])
 
         # Open trace page in browser
-        def _open_trace_page(basename: str):
+        def _open_trace_url(basename: str) -> None:
+            """Open trace URL in browser for the selected file"""
             if not basename:
                 gr.Warning("No file selected")
                 return
@@ -401,11 +402,14 @@ def main():  # pragma: no cover - placeholder only
                 
                 url = f"https://platform.openai.com/logs/trace?trace_id={trace_id}"
                 webbrowser.open(url)
-                gr.Info(f"Opening trace page for {basename}")
             except Exception as e:
-                gr.Warning(f"Error opening trace page: {e}")
+                gr.Warning(f"Error opening trace URL: {e}")
         
-        trace_btn.click(_open_trace_page, inputs=base_list)
+        trace_btn.click(
+            _open_trace_url, 
+            inputs=base_list,
+            outputs=None
+        )
 
         # Run pipeline for selected inputs only
         async def on_run(selected: List[str], transcribe_method: str, prompt_variant: str, notes: str):
