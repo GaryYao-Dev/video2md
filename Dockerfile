@@ -24,8 +24,9 @@ ENV PATH="/root/.local/bin:$PATH"
 COPY pyproject.toml ./
 COPY README.md ./
 
-# Create necessary directories
-RUN mkdir -p input output models prompts src ui docs
+# Create necessary directories (only for code, not data directories)
+# Note: input, output, models will be created as symlinks by entrypoint script
+RUN mkdir -p prompts src ui docs
 
 # Install Python dependencies using uv
 RUN uv sync --no-dev
