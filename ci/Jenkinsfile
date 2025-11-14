@@ -1,11 +1,6 @@
 pipeline {
     agent any
     
-    tools {
-        // Ensure Docker is available
-        // You may need to configure Docker tool in Jenkins
-    }
-    
     environment {
         // Container configuration
         CONTAINER_NAME = 'video2md'
