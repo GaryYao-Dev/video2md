@@ -25,7 +25,6 @@ import json
 import re
 import shutil
 import tempfile
-import webbrowser
 from typing import List, Tuple
 
 try:
@@ -189,15 +188,19 @@ def main():  # pragma: no cover - placeholder only
                 # Get initial basenames and set default value to first item if available
                 initial_basenames = _list_basenames()
                 initial_value = initial_basenames[0] if initial_basenames else None
-                base_list = gr.Dropdown(
-                    choices=initial_basenames, 
-                    value=initial_value,
-                    label="Select filename")
-                # Download button for the whole folder
-                folder_download = gr.File(
-                    label="Download Folder", visible=False, interactive=False)
-                # View Trace button
-                trace_btn = gr.Button("🔍 View Trace on OpenAI", visible=False, size="sm")
+                # Select filename, Download folder and trace link in the same row
+                with gr.Row():
+                    base_list = gr.Dropdown(
+                        choices=initial_basenames, 
+                        value=initial_value,
+                        label="Select filename",
+                        scale=3)
+                    folder_download = gr.File(
+                        label="Download Folder", visible=False, interactive=False, scale=2)
+                    trace_link = gr.HTML(
+                        value="",
+                        visible=False
+                    )
                 # Responsive player style (limit height, fit width)
                 gr.HTML("""
                 <style>
@@ -351,65 +354,60 @@ def main():  # pragma: no cover - placeholder only
                 
                 # Check if trace_id exists in JSON
                 json_path = base_dir / f"{basename}.json"
-                trace_btn_visible = False
+                trace_html = ""
+                trace_visible = False
                 if json_path.exists():
                     try:
                         with open(json_path, 'r', encoding='utf-8') as f:
                             json_data = json.load(f)
-                        trace_btn_visible = 'trace_id' in json_data and json_data['trace_id']
+                        trace_id = json_data.get('trace_id')
+                        if trace_id:
+                            url = f"https://platform.openai.com/logs/trace?trace_id={trace_id}"
+                            trace_html = f'''
+                            <div style="display: flex; align-items: center; height: 100%; padding-top: 24px;">
+                                <button onclick="window.open('{url}', '_blank')" 
+                                    style="
+                                        background-color: #fff0dd;
+                                        color: #ff6e00;
+                                        border: 1px solid #ffd9b3;
+                                        padding: 8px 12px;
+                                        border-radius: 8px;
+                                        cursor: pointer;
+                                        font-size: 13px;
+                                        font-weight: 500;
+                                        white-space: nowrap;
+                                        transition: all 0.2s;
+                                    "
+                                    onmouseover="this.style.backgroundColor='#ffe4c4'; this.style.borderColor='#ffb366'"
+                                    onmouseout="this.style.backgroundColor='#fff0dd'; this.style.borderColor='#ffd9b3'"
+                                >
+                                    🔍 View Trace
+                                </button>
+                            </div>
+                            '''
+                            trace_visible = True
                     except:
                         pass
             else:
                 md_display, media_path, txt_text, srt_text = "", None, "", ""
                 zip_path, folder_visible = None, False
-                trace_btn_visible = False
+                trace_html = ""
+                trace_visible = False
             return (
                 gr.update(value=md_display),
                 gr.update(value=media_path),
                 gr.update(value=txt_text),
                 gr.update(value=srt_text),
                 gr.update(value=zip_path, visible=folder_visible),
-                gr.update(visible=trace_btn_visible),
+                gr.update(value=trace_html, visible=trace_visible),
             )
 
         base_list.change(_load_all_previews, inputs=base_list,
-                         outputs=[md_preview, md_video, txt_code, srt_code, folder_download, trace_btn])
+                         outputs=[md_preview, md_video, txt_code, srt_code, folder_download, trace_link])
 
         # Initialize preview on page load if there's a default selection
         demo.load(_load_all_previews, inputs=base_list,
-                  outputs=[md_preview, md_video, txt_code, srt_code, folder_download, trace_btn])
-
-        # Open trace page in browser
-        def _open_trace_url(basename: str) -> None:
-            """Open trace URL in browser for the selected file"""
-            if not basename:
-                gr.Warning("No file selected")
-                return
-            
-            json_path = OUTPUT_DIR / basename / f"{basename}.json"
-            if not json_path.exists():
-                gr.Warning(f"JSON file not found: {json_path}")
-                return
-            
-            try:
-                with open(json_path, 'r', encoding='utf-8') as f:
-                    json_data = json.load(f)
-                
-                trace_id = json_data.get('trace_id')
-                if not trace_id:
-                    gr.Warning("No trace_id found in JSON file. Process the file first to generate trace_id.")
-                    return
-                
-                url = f"https://platform.openai.com/logs/trace?trace_id={trace_id}"
-                webbrowser.open(url)
-            except Exception as e:
-                gr.Warning(f"Error opening trace URL: {e}")
-        
-        trace_btn.click(
-            _open_trace_url, 
-            inputs=base_list,
-            outputs=None
-        )
+                  outputs=[md_preview, md_video, txt_code, srt_code, folder_download, trace_link])
 
         # Run pipeline for selected inputs only
         async def on_run(selected: List[str], transcribe_method: str, prompt_variant: str, notes: str):
@@ -600,7 +598,7 @@ def main():  # pragma: no cover - placeholder only
             # Older Gradio versions may not have Timer; ignore if unavailable
             pass
 
-    demo.launch(server_name="0.0.0.0")
+    demo.launch(server_name="0.0.0.0", show_error=True, inbrowser=False)
 
 
 if __name__ == "__main__":  # pragma: no cover - manual run only
