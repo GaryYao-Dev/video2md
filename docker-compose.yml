@@ -9,12 +9,8 @@ services:
     ports:
       - "7860:7860"
     volumes:
-      # Mount input/output directories for persistent data
-      - ./input:/app/input
-      - ./output:/app/output
-      - ./models:/app/models
-      # Mount your .env file with API keys
-      - ./.env:/app/.env:ro
+      # Mount parent directory containing all data
+      - .:/app/data
     environment:
       # Timezone (adjust as needed)
       - TZ=Australia/Sydney

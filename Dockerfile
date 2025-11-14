@@ -41,13 +41,17 @@ COPY prompts/ ./prompts/
 COPY docs/ ./docs/
 COPY main.py ./
 COPY .env.example ./
+COPY docker-entrypoint.sh ./
+
+# Make entrypoint executable
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Copy environment configuration template
 # Users should mount their own .env file when running the container
 COPY .env.example ./.env
 
 # Create volume mount points for persistent data
-VOLUME ["/app/input", "/app/output", "/app/models"]
+VOLUME ["/app/data"]
 
 # Expose Gradio default port
 EXPOSE 7860
@@ -59,6 +63,9 @@ ENV GRADIO_SERVER_PORT=7860
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:7860/ || exit 1
+
+# Set entrypoint to setup script
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 # Default command: run the web UI
 CMD ["uv", "run", "python", "ui/app.py"]

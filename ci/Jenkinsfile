@@ -60,10 +60,7 @@ pipeline {
                         -e TZ="${TZ}" \
                         -e HOST_OS="Unraid" \
                         -p "${HOST_PORT}:${CONTAINER_PORT}/tcp" \
-                        -v "${HOST_DATA_DIR}/input:/app/input" \
-                        -v "${HOST_DATA_DIR}/output:/app/output" \
-                        -v "${HOST_DATA_DIR}/models:/app/models" \
-                        -v "${HOST_DATA_DIR}/.env:/app/.env:ro" \
+                        -v "${HOST_DATA_DIR}:/app/data" \
                         "${IMAGE_NAME}"
                     """
                     echo "Container started successfully"
