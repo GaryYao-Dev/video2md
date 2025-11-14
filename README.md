@@ -4,6 +4,19 @@
 
 Video2MD is an intelligent toolkit that automatically converts video content into comprehensive, searchable markdown documents. Using advanced AI agents, it transcribes audio, researches context, and generates structured summaries - perfect for content creators, researchers, and knowledge workers.
 
+## 💡 Why Video2MD?
+
+Every day we come across excellent videos and short clips introducing projects, tutorials, or valuable insights. We bookmark them with good intentions, but they often end up buried and forgotten in our collections.
+
+**Video2MD solves this problem** by:
+
+- 📝 **Extracting the core content** from videos automatically
+- 🗂️ **Making information organized** and easily searchable
+- 🔍 **Enabling quick retrieval** when you need that knowledge later
+- 💾 **Preserving knowledge** in a format that's easy to reference and share
+
+Transform your video bookmarks from a digital graveyard into a searchable knowledge base.
+
 ## ✨ What Video2MD Does
 
 ### Input: Any Video File
