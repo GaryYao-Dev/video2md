@@ -12,6 +12,9 @@ pipeline {
         
         // Timezone configuration
         TZ = 'Australia/Sydney'
+        
+        // Unraid persistent directory
+        HOST_DATA_DIR = '/mnt/user/appdata/video2md'
     }
     
     stages {
@@ -24,23 +27,22 @@ pipeline {
             }
         }
         
-        stage('Check Docker Container') {
+        stage('Stop & Remove Existing Container') {
             steps {
                 script {
-                    // Check if container with same name is running
-                    def containerId = sh(
+                    echo "Checking for existing container: ${CONTAINER_NAME}"
+                    def existing = sh(
                         script: "docker ps -aq --filter name=^/${CONTAINER_NAME}\$",
                         returnStdout: true
                     ).trim()
                     
-                    if (containerId) {
-                        echo "Found existing container: ${containerId}"
-                        // Stop and remove existing container
-                        sh "docker stop ${CONTAINER_NAME}"
-                        sh "docker rm ${CONTAINER_NAME}"
-                        echo "Removed existing container"
+                    if (existing) {
+                        echo "Stopping existing container..."
+                        sh "docker stop ${CONTAINER_NAME} || true"
+                        echo "Removing existing container..."
+                        sh "docker rm ${CONTAINER_NAME} || true"
                     } else {
-                        echo "No existing container found"
+                        echo "No existing container found."
                     }
                 }
             }
@@ -54,13 +56,14 @@ pipeline {
                         docker run -d \
                         --name="${CONTAINER_NAME}" \
                         --net="bridge" \
-                        -e TZ="${TZ}" \
-                        -p "${HOST_PORT}:${CONTAINER_PORT}/tcp" \
-                        -v \$(pwd)/input:/app/input \
-                        -v \$(pwd)/output:/app/output \
-                        -v \$(pwd)/models:/app/models \
-                        -v \$(pwd)/.env:/app/.env:ro \
                         --restart unless-stopped \
+                        -e TZ="${TZ}" \
+                        -e HOST_OS="Unraid" \
+                        -p "${HOST_PORT}:${CONTAINER_PORT}/tcp" \
+                        -v "${HOST_DATA_DIR}/input:/app/input" \
+                        -v "${HOST_DATA_DIR}/output:/app/output" \
+                        -v "${HOST_DATA_DIR}/models:/app/models" \
+                        -v "${HOST_DATA_DIR}/.env:/app/.env:ro" \
                         "${IMAGE_NAME}"
                     """
                     echo "Container started successfully"
