@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  video2md:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: video2md
+    ports:
+      - "7860:7860"
+    volumes:
+      # Mount input/output directories for persistent data
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./models:/app/models
+      # Mount your .env file with API keys
+      - ./.env:/app/.env:ro
+    environment:
+      # Timezone (adjust as needed)
+      - TZ=Australia/Sydney
+      # Gradio configuration
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - GRADIO_SERVER_PORT=7860
+      # Optional: Override research timeout
+      # - RESEARCH_TOOL_SESSION_TIMEOUT_SECONDS=10
+    restart: unless-stopped
+    networks:
+      - video2md-network
+
+networks:
+  video2md-network:
+    driver: bridge
