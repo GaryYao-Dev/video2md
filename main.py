@@ -12,7 +12,7 @@ if _SRC.exists():
     sys.path.insert(0, str(_SRC))
 
 
-# Load environment variables (e.g., WHISPER_API_URL)
+# Load environment variables
 load_dotenv(override=True)
 
 

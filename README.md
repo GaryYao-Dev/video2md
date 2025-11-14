@@ -58,10 +58,10 @@ The easiest way to use Video2MD is through the web interface:
    powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
    ```
 
-2. **Setup and Launch**:
+2. **Setup**:
 
    ```bash
-   # install ffmpeg
+   # Clone and install dependencies
    git clone https://github.com/your-username/video2md.git
    cd video2md
    uv sync
@@ -71,14 +71,49 @@ The easiest way to use Video2MD is through the web interface:
    .\install_gpu.ps1
    # Linux/macOS:
    bash install_gpu.sh
+   ```
 
+3. **Configure Environment Variables**:
+
+   Copy `.env.example` to `.env` and configure your API keys:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Then edit the `.env` file with your specific configuration:
+
+   | Variable         | Description                      | Example                | Required |
+   | ---------------- | -------------------------------- | ---------------------- | -------- |
+   | `OPENAI_API_KEY` | OpenAI API key for AI processing | `sk-proj-...`          | Yes      |
+   | `SERPER_API_KEY` | Serper API key for web search    | `your_serper_key_here` | Yes      |
+
+   **Example `.env` file:**
+
+   ```bash
+   # OpenAI API key for transcription and summarization
+   OPENAI_API_KEY=sk-proj-your-actual-openai-key-here
+
+   # Serper API key for web search during research phase
+   SERPER_API_KEY=your-actual-serper-key-here
+   ```
+
+   **Getting API Keys:**
+
+   - **OpenAI API Key**: Sign up at [OpenAI Platform](https://platform.openai.com/) and create an API key
+     - Required for AI agents and OpenAI transcription method
+   - **Serper API Key**: Register at [Serper](https://serper.dev/) for web search functionality
+
+4. **Launch**:
+
+   ```bash
    uv run python ui/app.py
 
-   # run the following command to enable MCP logger output
+   # run the following command to enable MCP logger output on Windows
    uv run python ui/app.py 2>&1
    ```
 
-3. **Use the Web Interface**:
+5. **Use the Web Interface**:
 
    - Open your browser to the displayed URL (usually http://localhost:7860)
    - Upload videos or select existing files
@@ -93,6 +128,10 @@ For automation and batch processing:
 ```bash
 # Setup (one time)
 uv sync
+
+# Configure environment variables
+cp .env.example .env
+# Edit .env with your API keys (see environment configuration above)
 
 # Add videos to the input folder
 mkdir -p input
@@ -175,56 +214,7 @@ uv run python main.py
 # Or use the web interface for visual progress tracking
 ```
 
-### Configuration & Environment
-
-Set up API keys and customize behavior:
-
-```bash
-# Copy example environment file
-cp .env.example .env
-
-# Edit with your API keys (see details below)
-```
-
-#### Environment Configuration
-
-Copy `.env.example` to `.env` and configure the following variables:
-
-```bash
-cp .env.example .env
-```
-
-Then edit the `.env` file with your specific configuration:
-
-| Variable          | Description                          | Example                 | Required |
-| ----------------- | ------------------------------------ | ----------------------- | -------- |
-| `WHISPER_API_URL` | URL for Whisper transcription server | `http://localhost:8000` | No\*     |
-| `OPENAI_API_KEY`  | OpenAI API key for AI processing     | `sk-proj-...`           | Yes      |
-| `SERPER_API_KEY`  | Serper API key for web search        | `your_serper_key_here`  | Yes      |
-
-\* _Required only if using local Whisper transcription server mode_
-
-**Example `.env` file:**
-
-```bash
-# Whisper API server configuration
-WHISPER_API_URL=http://localhost:8000
-
-# OpenAI API key for transcription and summarization
-OPENAI_API_KEY=sk-proj-your-actual-openai-key-here
-
-# Serper API key for web search during research phase
-SERPER_API_KEY=your-actual-serper-key-here
-```
-
-**Getting API Keys:**
-
-- **OpenAI API Key**: Sign up at [OpenAI Platform](https://platform.openai.com/) and create an API key
-  - Required for AI agents and OpenAI transcription method
-- **Serper API Key**: Register at [Serper](https://serper.dev/) for web search functionality
-- **Whisper API URL**: Only needed if running a separate Whisper server (default: local processing)
-
-For more details on transcription methods, see [`docs/OPENAI_TRANSCRIPTION.md`](docs/OPENAI_TRANSCRIPTION.md).
+### Additional Configuration Options
 
 ## 📋 Requirements
 
@@ -339,9 +329,8 @@ Understanding the organization:
 - **`output/`** - Processed results appear here (one folder per video)
 - **`prompts/`** - AI prompt templates (customize behavior here)
 - **`docs/`** - Documentation
-  - `OPENAI_TRANSCRIPTION.md` - Guide for OpenAI transcription feature
   - `GPU_SUPPORT.md` - GPU setup instructions
-  - `LOCAL_WHISPER_GUIDE.md` - Local Whisper configuration
+  - `ENVIRONMENT_CONFIG.md` - Environment variables reference
 - **`src/video2md/`** - Core processing engine
   - `agents/` - The three AI agents (Whisper, Research, Summary)
   - `clients/` - Communication with external services (Whisper, OpenAI)

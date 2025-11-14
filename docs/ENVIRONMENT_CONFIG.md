@@ -35,15 +35,6 @@ WHISPER_CPU_THREADS=4                  # Number of CPU threads to use
                                        # Increase for faster CPU processing (if available)
 ```
 
-## Legacy Remote Whisper Server (Backup)
-
-These settings were used for the old remote Whisper server (now replaced by local client):
-
-```bash
-WHISPER_API_URL=http://localhost:8000  # Remote Whisper server URL
-                                       # Note: Local client is now default
-```
-
 ## Model Size Guide
 
 Choose the appropriate model size based on your needs:
@@ -182,38 +173,6 @@ project-root/
    - GPU users: Use `float16` compute type
    - CPU users: Use `int8` and increase thread count
    - Limited memory: Use smaller models
-
-## Migration from Remote Server
-
-If you were using the old remote Whisper server:
-
-**Old way (remote server):**
-
-```python
-from video2md.clients.backup.whisper_client_remote import transcribe_media
-
-result = transcribe_media(
-    "audio.mp3",
-    server_url="http://localhost:8000"
-)
-```
-
-**New way (local client):**
-
-```python
-from video2md.clients.whisper_client import WhisperClient
-
-client = WhisperClient()
-result = client.transcribe("audio.mp3")
-```
-
-The new local client:
-
-- ✅ No need for a separate server
-- ✅ Automatic model management
-- ✅ Better performance with local processing
-- ✅ Structured output with segments
-- ✅ GPU acceleration support
 
 ## See Also
 
