@@ -155,7 +155,7 @@ def main():  # pragma: no cover - placeholder only
                         ("Local Whisper (faster-whisper)", "local"),
                         ("OpenAI Whisper API (whisper-1)", "openai"),
                     ],
-                    value="local",
+                    value="openai",
                     label="Transcription Method",
                     info="Choose between local Whisper or OpenAI's cloud transcription API",
                 )
@@ -256,8 +256,9 @@ def main():  # pragma: no cover - placeholder only
                 f"✅ Saved: {', '.join(saved)}" if saved else "",
                 f"⚠️ Not video or failed: {', '.join(wrong)}" if wrong else "",
             ]).strip() or "No files saved."
-            # Also return updated input list
-            return status, gr.update(choices=_list_media_in_input())
+            # Also return updated input list with newly uploaded files selected
+            all_media = _list_media_in_input()
+            return status, gr.update(choices=all_media, value=saved)
 
     # For browser compatibility: listen to change (and upload if available) so list refreshes immediately after upload
         upload_files.change(_handle_upload, inputs=upload_files, outputs=[

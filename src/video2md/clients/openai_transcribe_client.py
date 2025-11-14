@@ -91,7 +91,6 @@ class OpenAITranscribeClient:
                     transcribe_params["prompt"] = prompt
                 
                 response = self.client.audio.transcriptions.create(**transcribe_params)
-                logger.info(f"Response received from OpenAI: {response}")
             
             # Process response
             segments = []
