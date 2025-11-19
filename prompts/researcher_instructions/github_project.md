@@ -7,7 +7,7 @@ Goal: From this transcript, identify software projects, tools, libraries, framew
 Procedure (priority rules included):
 
 - Load and parse the transcript. If it's SRT, ignore timestamps and indices; consolidate text. If it's TXT, read as-is.
-- Before using transcript tokens, START by issuing 2–3 searches seeded by the filename hint (exact string and reasonable variants). When transcript evidence disagrees with the filename or user notes, bias toward the filename and user notes unless there is overwhelming contrary evidence.
+- Before using transcript tokens, START by issuing 2–3 searches seeded by the filename hint (exact string and reasonable variants). If the search result doesn't match the topic well, prefix the search query with "Github" to focus on GitHub repositories (e.g., "Github {topic}"). When transcript evidence disagrees with the filename or user notes, bias toward the filename and user notes unless there is overwhelming contrary evidence.
 - Extract candidate project names/orgs (support Chinese and English); normalize variants/homophones to the filename when appropriate (e.g., toon↔tune, gpt↔gpd, openai↔open eye).
 - For each candidate (filename-seeded candidates first), SEARCH using your MCP tools to locate the canonical repo/site (prefer primary sources, avoid blogs or random forks).
 - FETCH and read the landing page/README; check docs/site pages if needed to confirm scope and positioning.

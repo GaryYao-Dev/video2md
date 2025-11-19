@@ -393,7 +393,16 @@ def main():  # pragma: no cover - placeholder only
                 zip_path, folder_visible = None, False
                 trace_html = ""
                 trace_visible = False
+            
+            # Update dropdown choices dynamically
+            current_basenames = _list_basenames()
+            dropdown_update = gr.update(
+                choices=current_basenames,
+                value=basename if basename in current_basenames else (current_basenames[0] if current_basenames else None)
+            )
+            
             return (
+                dropdown_update,
                 gr.update(value=md_display),
                 gr.update(value=media_path),
                 gr.update(value=txt_text),
@@ -403,11 +412,11 @@ def main():  # pragma: no cover - placeholder only
             )
 
         base_list.change(_load_all_previews, inputs=base_list,
-                         outputs=[md_preview, md_video, txt_code, srt_code, folder_download, trace_link])
+                         outputs=[base_list, md_preview, md_video, txt_code, srt_code, folder_download, trace_link])
 
         # Initialize preview on page load if there's a default selection
         demo.load(_load_all_previews, inputs=base_list,
-                  outputs=[md_preview, md_video, txt_code, srt_code, folder_download, trace_link])
+                  outputs=[base_list, md_preview, md_video, txt_code, srt_code, folder_download, trace_link])
 
         # Run pipeline for selected inputs only
         async def on_run(selected: List[str], transcribe_method: str, prompt_variant: str, notes: str):
