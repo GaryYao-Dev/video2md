@@ -607,7 +607,7 @@ def main():  # pragma: no cover - placeholder only
             # Older Gradio versions may not have Timer; ignore if unavailable
             pass
 
-    demo.launch(server_name="0.0.0.0", show_error=True, inbrowser=False)
+    demo.launch(server_name="0.0.0.0", show_error=True, inbrowser=False, favicon_path="ui/video2MD_logo_256.png", allowed_paths=["ui"])
 
 
 if __name__ == "__main__":  # pragma: no cover - manual run only
