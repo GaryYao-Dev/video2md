@@ -16,7 +16,7 @@ from video2md.models.transcription_models import TranscriptSegment, TranscriptRe
 load_dotenv(override=True)
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 

@@ -13,7 +13,7 @@ from video2md.clients.openai_transcribe_client import OpenAITranscribeClient
 from video2md.utils.transcript_converter import save_transcript, transcript_to_srt
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 app = Server("openai-transcribe")
