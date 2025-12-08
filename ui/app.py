@@ -297,7 +297,7 @@ def main():  # pragma: no cover - placeholder only
         print("Gradio is not installed yet. Install with: pip install gradio>=4")
         return
 
-    with gr.Blocks(title="Video2MD") as demo:
+    with gr.Blocks(title="Video2MD", theme=gr.themes.Soft(primary_hue=gr.themes.colors.orange)) as demo:
         gr.Markdown("# Video2MD")
         gr.Markdown("""
         ### Convert videos to Markdown summaries with transcription and research.

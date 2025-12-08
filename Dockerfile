@@ -22,6 +22,7 @@ ENV PATH="/root/.local/bin:$PATH"
 
 # Copy dependency files
 COPY pyproject.toml ./
+COPY uv.lock ./
 COPY README.md ./
 
 # Create necessary directories (only for code, not data directories)
