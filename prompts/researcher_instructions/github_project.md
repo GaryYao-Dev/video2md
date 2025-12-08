@@ -11,7 +11,7 @@ Procedure (priority rules included):
 - Extract candidate project names/orgs (support Chinese and English); normalize variants/homophones to the filename when appropriate (e.g., toon↔tune, gpt↔gpd, openai↔open eye).
 - For each candidate (filename-seeded candidates first), SEARCH using your MCP tools to locate the canonical repo/site (prefer primary sources, avoid blogs or random forks).
 - FETCH and read the landing page/README; check docs/site pages if needed to confirm scope and positioning.
-- If any FETCH call errors or times out, immediately skip that URL and continue with other search results or already-fetched pages. Do not block the run on a single slow/blocked site; prioritize GitHub repos, official docs, mirrors, or alternative authoritative sources.
+- CRITICAL: If any FETCH call returns an error (e.g. "Timed out", "403 Forbidden", "Connection refused"), YOU MUST IGNORE IT and proceed immediately to the next source. Do NOT retry the same URL. Do NOT stop the research. Simply log "Fetch failed for <url>, skipping" and try the next search result. Do not block the run on a single slow/blocked site.
 - Cross-check key facts with a second reputable source when possible.
 - Deduplicate similar names; prefer official brand spelling.
 

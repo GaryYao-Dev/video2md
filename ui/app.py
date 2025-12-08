@@ -12,7 +12,13 @@ To run locally (optional):
 Requires:
     pip install gradio>=4
 """
+
 from __future__ import annotations
+import sys
+import os
+# Ensure src is in python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
+
 from video2md.agents.summarize_host import summarize_host
 from video2md.agents.research_host import research_host
 from video2md.agents.whisper_host import whisper_host
@@ -25,7 +31,21 @@ import json
 import re
 import shutil
 import tempfile
-from typing import List, Tuple
+from typing import List, Optional, Tuple
+
+# Import downloaders for URL-based video downloading
+try:
+    from video2md.downloaders import (
+        get_downloader,
+        detect_platform,
+        DownloadError,
+        PlatformNotSupportedError,
+        SUPPORTED_PLATFORMS,
+    )
+    from video2md.downloaders.base import Platform
+    DOWNLOADERS_AVAILABLE = True
+except ImportError:
+    DOWNLOADERS_AVAILABLE = False
 
 try:
     import gradio as gr  # type: ignore
@@ -122,6 +142,152 @@ async def process_selected(selected_rel_paths: List[str], transcribe_method: str
     return summaries
 
 
+async def download_video_task(
+    url: str,
+    topic_name: str = "",
+    progress_callback: Optional[callable] = None,
+) -> Tuple[Optional[str], str]:
+    """
+    Download video from URL to input directory.
+    
+    Args:
+        url: Video URL to download
+        topic_name: User-provided topic name for the video (required)
+        progress_callback: Optional callback for progress updates
+    
+    Returns:
+        Tuple of (video_path, status_message)
+    """
+    if not DOWNLOADERS_AVAILABLE:
+        return None, "❌ URL downloaders not available. Please check dependencies."
+    
+    def log(msg: str) -> None:
+        if progress_callback:
+            progress_callback(msg)
+        print(msg)
+    
+    url = url.strip()
+    if not url:
+        return None, "❌ Please enter a video URL."
+    
+    # Validate topic name
+    topic_name = topic_name.strip()
+    if not topic_name:
+        return None, "❌ Please enter a topic name for the video"
+    
+    # Sanitize topic name for use as directory/file name
+    import re
+    safe_topic_name = re.sub(r'[<>:"/\\|?*]', '_', topic_name)
+    safe_topic_name = safe_topic_name[:100]  # Limit length
+    
+    # Detect platform
+    platform = detect_platform(url)
+    if platform is None:
+        return None, f"❌ Unsupported platform. Supported: {', '.join(p.value for p in SUPPORTED_PLATFORMS.keys())}"
+    
+    platform_name = SUPPORTED_PLATFORMS.get(platform, platform.value)
+    log(f"🔍 Detected platform: {platform_name}")
+    log(f"📁 Topic: {topic_name}")
+    
+    try:
+        # Get downloader
+        downloader = get_downloader(url)
+        
+        # Create output directory for metadata (video will go to input)
+        # We create the output folder now to store metadata, but the video 
+        # will be processed from input/ and moved here later by the pipeline.
+        final_output_dir = OUTPUT_DIR / safe_topic_name
+        final_output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Download video to a temporary location or directly to input?
+        # Let's download to input directly to avoid copy overhead
+        INPUT_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # We use a temp dir for download to ensure we can rename strictly
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            # Download video
+            log(f"⬇️ Downloading video from {platform_name}...")
+            
+            # Progress hook for downloader
+            def download_progress_hook(d):
+                if d.get('status') == 'downloading':
+                    # Helper to strip ANSI codes
+                    def strip_ansi(s):
+                        return re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', s)
+
+                    percent_str = strip_ansi(d.get('_percent_str', '')).strip()
+                    speed_str = strip_ansi(d.get('_speed_str', '')).strip()
+                    eta_str = strip_ansi(d.get('_eta_str', '')).strip()
+                    
+                    if percent_str and '%' in percent_str:
+                        try:
+                            # Extract numeric value
+                            p_val = float(percent_str.replace('%', ''))
+                            
+                            # Check if we should log (0, 33, 66, 100)
+                            should_log = False
+                            
+                            # Log 0% only once (approx)
+                            if 0.0 <= p_val < 0.1: should_log = True
+                            # Log ~33%
+                            elif 33.0 <= p_val <= 34.0: should_log = True
+                            # Log ~66%
+                            elif 66.0 <= p_val <= 67.0: should_log = True
+                            # Log 100%
+                            elif p_val >= 99.9: should_log = True
+                            
+                            # Prevent spamming: simple state tracking would be better but 
+                            # given the stateless hook, strict ranges help.
+                            # The previous logic allowed < 1.0 which caused 0.1, 0.3 etc.
+                            
+                            if should_log:
+                                log(f"⬇️ Downloading: {percent_str} (Speed: {speed_str}, ETA: {eta_str})")
+                        except ValueError:
+                            pass
+            
+            result = await downloader.download(url, temp_path, progress_hook=download_progress_hook)
+            
+            video_path = result.file_path
+            video_ext = video_path.suffix or ".mp4"
+            
+            # Target path in input directory
+            input_video_path = INPUT_DIR / f"{safe_topic_name}{video_ext}"
+            
+            # Move downloaded file to input directory
+            shutil.move(str(video_path), str(input_video_path))
+            
+            log(f"✅ Downloaded to input: {input_video_path.name}")
+            
+            # Save metadata to output directory
+            metadata_path = final_output_dir / f"{safe_topic_name}.json"
+            metadata = {
+                "topic": topic_name,
+                "title": result.title,
+                "video_id": result.video_id,
+                "platform": result.platform.value,
+                "duration": result.duration,
+                "cover_url": result.cover_url,
+                "source_url": url,
+                **result.raw_info,
+            }
+            with open(metadata_path, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, ensure_ascii=False, indent=2)
+            
+            return str(input_video_path), f"✅ Ready to process: {safe_topic_name}"
+
+    except PlatformNotSupportedError as e:
+        return None, f"❌ Platform not supported: {e}"
+    except DownloadError as e:
+        return None, f"❌ Download failed: {e}"
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return None, f"❌ Error: {e}"
+
+
 def main():  # pragma: no cover - placeholder only
     # Check dependencies before starting UI
     print("Checking dependencies...")
@@ -140,45 +306,72 @@ def main():  # pragma: no cover - placeholder only
         with gr.Row():
             # Left column: upload + input selection + action button + logs
             with gr.Column(scale=1, min_width=280):
-                upload_files = gr.File(
-                    label="Upload videos", file_count="multiple")
-                upload_status = gr.Markdown(visible=True)
+                # Tabbed input mode selection
+                with gr.Tabs() as input_tabs:
+                    # Tab 1: File Upload (existing functionality)
+                    with gr.TabItem("📁 Local Files", id="file_tab"):
+                        upload_files = gr.File(
+                            label="Upload videos", file_count="multiple")
+                        upload_status = gr.Markdown(visible=True)
+                    
+                    # Tab 2: URL Download (new functionality)
+                    # Tab 2: URL Download (new functionality)
+                    with gr.TabItem("🔗 Video URL", id="url_tab"):
+                        gr.Markdown("""
+                        **Supported Platforms**: Bilibili, YouTube
+                        """)
+                        topic_input = gr.Textbox(
+                            label="📌 Topic Name *Required*",
+                            placeholder="e.g., Python_Tutorial, Product_Demo...",
+                            lines=1,
+                        )
+                        url_input = gr.Textbox(
+                            label="🔗 Video URL",
+                            placeholder="https://www.bilibili.com/video/BVxxxxx or https://youtu.be/xxxxx",
+                            lines=2,
+                        )
+                        detected_platform = gr.Markdown(value="", visible=False)
+                        url_run_btn = gr.Button("Download to Input", variant="primary")
+                        url_log_output = gr.Textbox(label="Download Logs", lines=5, max_lines=10, interactive=False)
 
+                # Shared settings and processing
+                gr.Markdown("---")
+                
                 input_files = gr.CheckboxGroup(
                     choices=_list_media_in_input(),
-                    label="Select media files to process",
+                    label="Select media files to process (from Uploads or Downloads)",
                 )
+                
+                with gr.Row():
+                    transcribe_method = gr.Radio(
+                        choices=[
+                            ("Local Whisper (faster-whisper)", "local"),
+                            ("OpenAI Whisper API (whisper-1)", "openai"),
+                        ],
+                        value="openai",
+                        label="Transcription Method",
+                    )
 
-                transcribe_method = gr.Radio(
-                    choices=[
-                        ("Local Whisper (faster-whisper)", "local"),
-                        ("OpenAI Whisper API (whisper-1)", "openai"),
-                    ],
-                    value="openai",
-                    label="Transcription Method",
-                    info="Choose between local Whisper or OpenAI's cloud transcription API",
-                )
-
-                prompt_select = gr.Dropdown(
-                    choices=[
-                        "github_project",
-                        "general",
-                        "tutorial",
-                        "review_analysis",
-                    ],
-                    value="github_project",
-                    label="Research prompt",
-                    allow_custom_value=False,
-                )
+                    prompt_select = gr.Dropdown(
+                        choices=[
+                            "github_project",
+                            "general",
+                            "tutorial",
+                            "review_analysis",
+                        ],
+                        value="github_project",
+                        label="Research prompt",
+                        allow_custom_value=False,
+                    )
 
                 user_notes = gr.Textbox(
                     lines=4,
                     label="User notes (optional)",
                     info="Add author comments, product model numbers, repo URLs, or any hints to bias research.",
                 )
-
-                run_btn = gr.Button("Go")
-
+                
+                run_btn = gr.Button("Go", variant="primary")
+                
                 log_output = gr.Textbox(
                     lines=18, label="Logs", interactive=False)
 
@@ -595,6 +788,93 @@ def main():  # pragma: no cover - placeholder only
         # Note: on_run now returns three outputs: logs, basename dropdown, and input file checkbox group
         run_btn.click(on_run, inputs=[input_files, transcribe_method, prompt_select, user_notes],
                       outputs=[log_output, base_list, input_files])
+        
+        # URL download handler
+        async def on_url_download(topic: str, url: str):
+            """Handle URL download only."""
+            log_content = ""
+            
+            def step(msg: str) -> str:
+                nonlocal log_content
+                log_content += msg + "\n"
+                return log_content
+            
+            # Validate topic name first
+            if not topic or not topic.strip():
+                yield step("❌ Please enter a topic name"), gr.update()
+                return
+            
+            if not url or not url.strip():
+                yield step("❌ Please enter a video URL."), gr.update()
+                return
+            
+            yield step(f"🔗 Processing URL: {url}"), gr.update()
+            
+            # Create a queue for logs to enable real-time streaming
+            import asyncio
+            log_queue = asyncio.Queue()
+            
+            def log_callback(msg: str):
+                log_queue.put_nowait(msg)
+            
+            # Run processing in a separate task
+            async def process_task():
+                try:
+                    video_path, status = await download_video_task(
+                        url=url,
+                        topic_name=topic,
+                        progress_callback=log_callback,
+                    )
+                    log_queue.put_nowait(("DONE", status))
+                except Exception as e:
+                    log_queue.put_nowait(("ERROR", str(e)))
+                finally:
+                    log_queue.put_nowait(None) # Sentinel
+
+            # Start the background task
+            task = asyncio.create_task(process_task())
+            
+            # Consume logs from queue and yield to UI
+            while True:
+                # Wait for next log message
+                msg = await log_queue.get()
+                
+                if msg is None:
+                    break
+                
+                if isinstance(msg, tuple):
+                    type_, content = msg
+                    if type_ == "DONE":
+                        yield step(content), gr.update(choices=_list_media_in_input())
+                    elif type_ == "ERROR":
+                        yield step(f"❌ Error: {content}"), gr.update(choices=_list_media_in_input())
+                else:
+                    # Regular log message
+                    yield step(msg), gr.update()
+            
+            # Ensure task is finished
+            await task
+        
+        url_run_btn.click(
+            on_url_download,
+            inputs=[topic_input, url_input],
+            outputs=[url_log_output, input_files],
+        )
+        
+        # URL input platform detection (on change)
+        def on_url_change(url: str):
+            
+            if DOWNLOADERS_AVAILABLE:
+                platform = detect_platform(url)
+                if platform:
+                    platform_name = SUPPORTED_PLATFORMS.get(platform, platform.value)
+                    return gr.update(value=f"✅ **Platform**: {platform_name}", visible=True)
+                else:
+                    return gr.update(value="⚠️ **Unsupported platform**", visible=True)
+            else:
+                return gr.update(value="⚠️ **Downloaders not available**", visible=True)
+        
+        url_input.change(on_url_change, inputs=[url_input], outputs=[detected_platform])
 
         # Timer: background refresh for input list to reduce manual refresh actions
         def _auto_refresh_inputs():

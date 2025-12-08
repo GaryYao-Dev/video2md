@@ -36,6 +36,8 @@ dependencies = [
     "jinja2>=3.1.0",
     "gradio>=5.49.1",
     "faster-whisper>=1.1.1",
+    # URL video download dependencies
+    "yt-dlp>=2024.0.0",  # For Bilibili and YouTube downloads
 ]
 
 [project.urls]

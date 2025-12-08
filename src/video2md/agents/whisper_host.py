@@ -9,6 +9,11 @@ from video2md.prompt_loader import default_loader as prompts
 from video2md.server.mcp_params import whisper_params, openai_transcribe_params, files_params
 
 
+import logging
+
+# Configure logging to capture tool calls
+logging.basicConfig(level=logging.WARNING)
+
 async def whisper_host(
     input_dir: str = "input",
     media_move_root: str = "output",
@@ -140,12 +145,28 @@ async def whisper_host(
         srt_paths: List[str] = []
         for idx, mf in enumerate(sorted(media_files), 1):
             print(f"\n[{idx}/{len(media_files)}] Processing: {mf}")
-            result = await run_for_file(mf)
-            print(
-                f"Whisper Host Agent Result for {mf.name}: {result.final_output}")
+            
+            # Check for expected SRT before running (might already exist)
+            srt_path = Path(media_move_root) / mf.stem / f"{mf.stem}.srt"
+            
+            try:
+                result = await run_for_file(mf)
+                print(f"Whisper Host Agent Result for {mf.name}: {result.final_output}")
+            except Exception as e:
+                error_msg = str(e)
+                # Check if this is the known benign MCP tool error
+                if "Invalid structured content for tool move_file" in error_msg:
+                    logger.debug(f"Ignored benign MCP error for move_file: {error_msg}")
+                    # Assume success if SRT exists (which we check below)
+                elif "move_file" in error_msg and srt_path.exists():
+                    print(f"Warning: MCP tool error occurred but SRT exists, continuing: {error_msg[:100]}")
+                else:
+                    print(f"Error processing {mf.name}: {e}")
+                    # Check if SRT was still created despite the error
+                    if not srt_path.exists():
+                        continue  # Skip this file
 
             # Check for expected SRT in per-file output folder
-            srt_path = Path(media_move_root) / mf.stem / f"{mf.stem}.srt"
             if srt_path.exists():
                 srt_paths.append(str(srt_path))
             else:

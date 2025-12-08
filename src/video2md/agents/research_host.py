@@ -39,9 +39,9 @@ async def research_host(
     # allow continued search after a single tool failure.
     try:
         tool_session_timeout_s = int(
-            os.getenv("RESEARCH_TOOL_SESSION_TIMEOUT_SECONDS", "20"))
+            os.getenv("RESEARCH_TOOL_SESSION_TIMEOUT_SECONDS", "60"))
     except ValueError:
-        tool_session_timeout_s = 20
+        tool_session_timeout_s = 60
 
     for srt in srts:
         srt_path = Path(srt)

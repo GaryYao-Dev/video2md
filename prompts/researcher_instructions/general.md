@@ -11,7 +11,7 @@ Procedure (priority rules included):
 - Extract candidate entities/topics (people, organizations, products, events, concepts). Normalize homophones/variants toward the filename and user notes.
 - For each high-confidence candidate, SEARCH for an official or primary source first (official site, Wikipedia page, original publication). Avoid low-quality blogs and random forums unless needed for disambiguation.
 - FETCH and read landing pages to confirm identity and scope; cross-check key facts with at least one secondary reputable source when possible.
-- If a URL errors or is slow, skip it quickly and use the next best primary/secondary source.
+- CRITICAL: If a fetch tool call returns an error (e.g. "Timed out", "403 Forbidden"), YOU MUST IGNORE IT and proceed immediately to the next source. Do NOT retry the same URL. Do NOT stop the research. Simply log "Fetch failed for <url>, skipping" and try the next search result.
 - Deduplicate overlapping entities and prefer canonical naming.
 
 Output (Markdown by default), one section per confirmed topic/entity:
