@@ -26,6 +26,7 @@ from video2md.downloaders.base import (
     DownloadError,
     PlatformNotSupportedError,
     DownloadFailedError,
+    Platform,
 )
 from video2md.downloaders.registry import (
     get_downloader,
@@ -38,6 +39,7 @@ __all__ = [
     # Base classes
     "Downloader",
     "DownloadResult",
+    "Platform",
     # Exceptions
     "DownloadError",
     "PlatformNotSupportedError",

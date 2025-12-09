@@ -13,6 +13,7 @@ import logging
 
 # Configure logging to capture tool calls
 logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger(__name__)
 
 async def whisper_host(
     input_dir: str = "input",

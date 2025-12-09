@@ -34,6 +34,18 @@ _PLATFORM_PATTERNS: Final[dict[Platform, tuple[re.Pattern[str], ...]]] = {
         re.compile(r"youtu\.be/", re.IGNORECASE),
         re.compile(r"youtube\.com/shorts/", re.IGNORECASE),
     ),
+    Platform.DOUYIN: (
+        re.compile(r"douyin\.com/video/", re.IGNORECASE),
+        re.compile(r"douyin\.com/user/", re.IGNORECASE),
+        re.compile(r"douyin\.com/.*modal_id=", re.IGNORECASE),
+        re.compile(r"v\.douyin\.com/", re.IGNORECASE),
+        re.compile(r"iesdouyin\.com/", re.IGNORECASE),
+    ),
+    Platform.TIKTOK: (
+        re.compile(r"tiktok\.com/", re.IGNORECASE),
+        re.compile(r"vm\.tiktok\.com/", re.IGNORECASE),
+        re.compile(r"vt\.tiktok\.com/", re.IGNORECASE),
+    ),
     Platform.LOCAL: (
         re.compile(r"^/"),           # Unix absolute path
         re.compile(r"^[A-Za-z]:\\"),  # Windows absolute path
@@ -46,6 +58,8 @@ _PLATFORM_PATTERNS: Final[dict[Platform, tuple[re.Pattern[str], ...]]] = {
 SUPPORTED_PLATFORMS: Final[dict[Platform, str]] = {
     Platform.BILIBILI: "哔哩哔哩 (Bilibili)",
     Platform.YOUTUBE: "YouTube",
+    Platform.DOUYIN: "抖音 (Douyin)",
+    Platform.TIKTOK: "TikTok",
     Platform.LOCAL: "本地文件 (Local)",
 }
 
@@ -126,6 +140,20 @@ def _initialize_downloaders() -> None:
     except ImportError as e:
         import logging
         logging.getLogger(__name__).warning(f"YoutubeDownloader not available: {e}")
+
+    try:
+        from video2md.downloaders.douyin import DouyinDownloader
+        _downloaders[Platform.DOUYIN] = DouyinDownloader()
+    except ImportError as e:
+        import logging
+        logging.getLogger(__name__).warning(f"DouyinDownloader not available: {e}")
+
+    try:
+        from video2md.downloaders.tiktok import TiktokDownloader
+        _downloaders[Platform.TIKTOK] = TiktokDownloader()
+    except ImportError as e:
+        import logging
+        logging.getLogger(__name__).warning(f"TiktokDownloader not available: {e}")
     
     try:
         from video2md.downloaders.local import LocalDownloader

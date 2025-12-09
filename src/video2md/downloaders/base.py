@@ -20,6 +20,8 @@ class Platform(str, Enum):
     """Supported video platforms."""
     BILIBILI = "bilibili"
     YOUTUBE = "youtube"
+    DOUYIN = "douyin"
+    TIKTOK = "tiktok"
     LOCAL = "local"
 
 

@@ -16,6 +16,7 @@ Requires:
 from __future__ import annotations
 import sys
 import os
+
 # Ensure src is in python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
@@ -146,7 +147,8 @@ async def download_video_task(
     url: str,
     topic_name: str = "",
     progress_callback: Optional[callable] = None,
-) -> Tuple[Optional[str], str]:
+    cookie: Optional[str] = None,
+) -> Tuple[Optional[str], str, Optional[str]]:
     """
     Download video from URL to input directory.
     
@@ -156,10 +158,10 @@ async def download_video_task(
         progress_callback: Optional callback for progress updates
     
     Returns:
-        Tuple of (video_path, status_message)
+        Tuple of (video_path, status_message, video_title)
     """
     if not DOWNLOADERS_AVAILABLE:
-        return None, "❌ URL downloaders not available. Please check dependencies."
+        return None, "❌ URL downloaders not available. Please check dependencies.", None
     
     def log(msg: str) -> None:
         if progress_callback:
@@ -168,12 +170,12 @@ async def download_video_task(
     
     url = url.strip()
     if not url:
-        return None, "❌ Please enter a video URL."
+        return None, "❌ Please enter a video URL.", None
     
     # Validate topic name
     topic_name = topic_name.strip()
     if not topic_name:
-        return None, "❌ Please enter a topic name for the video"
+        return None, "❌ Please enter a topic name for the video", None
     
     # Sanitize topic name for use as directory/file name
     import re
@@ -183,7 +185,7 @@ async def download_video_task(
     # Detect platform
     platform = detect_platform(url)
     if platform is None:
-        return None, f"❌ Unsupported platform. Supported: {', '.join(p.value for p in SUPPORTED_PLATFORMS.keys())}"
+        return None, f"❌ Unsupported platform. Supported: {', '.join(p.value for p in SUPPORTED_PLATFORMS.keys())}", None
     
     platform_name = SUPPORTED_PLATFORMS.get(platform, platform.value)
     log(f"🔍 Detected platform: {platform_name}")
@@ -248,7 +250,7 @@ async def download_video_task(
                         except ValueError:
                             pass
             
-            result = await downloader.download(url, temp_path, progress_hook=download_progress_hook)
+            result = await downloader.download(url, temp_path, progress_hook=download_progress_hook, cookie=cookie)
             
             video_path = result.file_path
             video_ext = video_path.suffix or ".mp4"
@@ -276,16 +278,16 @@ async def download_video_task(
             with open(metadata_path, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, ensure_ascii=False, indent=2)
             
-            return str(input_video_path), f"✅ Ready to process: {safe_topic_name}"
+            return str(input_video_path), f"✅ Ready to process: {safe_topic_name}", result.title
 
     except PlatformNotSupportedError as e:
-        return None, f"❌ Platform not supported: {e}"
+        return None, f"❌ Platform not supported: {e}", None
     except DownloadError as e:
-        return None, f"❌ Download failed: {e}"
+        return None, f"❌ Download failed: {e}", None
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return None, f"❌ Error: {e}"
+        return None, f"❌ Error: {e}", None
 
 
 def main():  # pragma: no cover - placeholder only
@@ -297,15 +299,16 @@ def main():  # pragma: no cover - placeholder only
         print("Gradio is not installed yet. Install with: pip install gradio>=4")
         return
 
-    with gr.Blocks(title="Video2MD", theme=gr.themes.Soft(primary_hue=gr.themes.colors.orange)) as demo:
+    with gr.Blocks(title="Video2MD", theme=gr.themes.Soft(primary_hue=gr.themes.colors.purple)) as demo:
         gr.Markdown("# Video2MD")
         gr.Markdown("""
         ### Convert videos to Markdown summaries with transcription and research.
         """)
 
         with gr.Row():
-            # Left column: upload + input selection + action button + logs
+            # Left column 1: Uploads / URL
             with gr.Column(scale=1, min_width=280):
+                gr.Markdown("### File Input")
                 # Tabbed input mode selection
                 with gr.Tabs() as input_tabs:
                     # Tab 1: File Upload (existing functionality)
@@ -315,31 +318,40 @@ def main():  # pragma: no cover - placeholder only
                         upload_status = gr.Markdown(visible=True)
                     
                     # Tab 2: URL Download (new functionality)
-                    # Tab 2: URL Download (new functionality)
                     with gr.TabItem("🔗 Video URL", id="url_tab"):
                         gr.Markdown("""
-                        **Supported Platforms**: Bilibili, YouTube
+                        **Supported Platforms**: Bilibili, YouTube, Douyin(Cookie Required), TikTok(Cookie Required)
                         """)
                         topic_input = gr.Textbox(
-                            label="📌 Topic Name *Required*",
+                            label="Topic Name *Required*",
                             placeholder="e.g., Python_Tutorial, Product_Demo...",
                             lines=1,
                         )
                         url_input = gr.Textbox(
-                            label="🔗 Video URL",
-                            placeholder="https://www.bilibili.com/video/BVxxxxx or https://youtu.be/xxxxx",
+                            label="Video URL",
+                            placeholder="https://www.bilibili.com/video/BVxxxxx\nhttps://youtu.be/xxxxx\nhttps://www.douyin.com/video/xxxxx\nhttps://www.tiktok.com/video/xxxxx",
+                            lines=4,
+                        )
+                        # Cookie input for Douyin/TikTok
+                        cookie_input = gr.Textbox(
+                            label="Cookie for Douyin/TikTok",
+                            placeholder="Paste cookie string here if download fails (Netscape format or header string)",
                             lines=2,
+                            visible=False,
+                            max_lines=2,
                         )
                         detected_platform = gr.Markdown(value="", visible=False)
+                        
                         url_run_btn = gr.Button("Download to Input", variant="primary")
-                        url_log_output = gr.Textbox(label="Download Logs", lines=5, max_lines=10, interactive=False)
+                        url_log_output = gr.Textbox(label="Download Logs", lines=2, max_lines=3, interactive=False)
 
-                # Shared settings and processing
-                gr.Markdown("---")
+            # Center column 2: Settings & Logs
+            with gr.Column(scale=1, min_width=280):
+                gr.Markdown("### Processing Settings")
                 
                 input_files = gr.CheckboxGroup(
                     choices=_list_media_in_input(),
-                    label="Select media files to process (from Uploads or Downloads)",
+                    label="Select media files",
                 )
                 
                 with gr.Row():
@@ -375,8 +387,8 @@ def main():  # pragma: no cover - placeholder only
                 log_output = gr.Textbox(
                     lines=18, label="Logs", interactive=False)
 
-            # Center column: Markdown/TXT/SRT selection + preview (tabbed)
-            with gr.Column(scale=2):
+            # Center column 3: Markdown/TXT/SRT selection + preview (tabbed)
+            with gr.Column(scale=3):
                 gr.Markdown("### Preview")
                 # Get initial basenames and set default value to first item if available
                 initial_basenames = _list_basenames()
@@ -790,7 +802,7 @@ def main():  # pragma: no cover - placeholder only
                       outputs=[log_output, base_list, input_files])
         
         # URL download handler
-        async def on_url_download(topic: str, url: str):
+        async def on_url_download(topic: str, url: str, cookie: str):
             """Handle URL download only."""
             log_content = ""
             
@@ -801,14 +813,14 @@ def main():  # pragma: no cover - placeholder only
             
             # Validate topic name first
             if not topic or not topic.strip():
-                yield step("❌ Please enter a topic name"), gr.update()
+                yield step("❌ Please enter a topic name"), gr.update(), gr.update(), gr.update()
                 return
             
             if not url or not url.strip():
-                yield step("❌ Please enter a video URL."), gr.update()
+                yield step("❌ Please enter a video URL."), gr.update(), gr.update(), gr.update()
                 return
             
-            yield step(f"🔗 Processing URL: {url}"), gr.update()
+            yield step(f"🔗 Processing URL: {url}"), gr.update(), gr.update(), gr.update()
             
             # Create a queue for logs to enable real-time streaming
             import asyncio
@@ -817,15 +829,18 @@ def main():  # pragma: no cover - placeholder only
             def log_callback(msg: str):
                 log_queue.put_nowait(msg)
             
+
+
             # Run processing in a separate task
             async def process_task():
                 try:
-                    video_path, status = await download_video_task(
+                    video_path, status, title = await download_video_task(
                         url=url,
                         topic_name=topic,
                         progress_callback=log_callback,
+                        cookie=cookie.strip() if cookie else None,
                     )
-                    log_queue.put_nowait(("DONE", status))
+                    log_queue.put_nowait(("DONE", (status, title)))
                 except Exception as e:
                     log_queue.put_nowait(("ERROR", str(e)))
                 finally:
@@ -845,36 +860,91 @@ def main():  # pragma: no cover - placeholder only
                 if isinstance(msg, tuple):
                     type_, content = msg
                     if type_ == "DONE":
-                        yield step(content), gr.update(choices=_list_media_in_input())
+                        status_msg, title = content
+                        # Update inputs, user notes, and logs
+                        # Prep note update: if title is available, set it
+                        note_update = gr.update(value=title) if title else gr.update()
+                        yield step(status_msg), gr.update(choices=_list_media_in_input()), gr.update(), note_update
                     elif type_ == "ERROR":
-                        yield step(f"❌ Error: {content}"), gr.update(choices=_list_media_in_input())
+                        yield step(f"❌ Error: {content}"), gr.update(choices=_list_media_in_input()), gr.update(), gr.update()
                 else:
                     # Regular log message
-                    yield step(msg), gr.update()
+                    yield step(msg), gr.update(), gr.update(), gr.update()
             
             # Ensure task is finished
             await task
         
         url_run_btn.click(
             on_url_download,
-            inputs=[topic_input, url_input],
-            outputs=[url_log_output, input_files],
+            inputs=[topic_input, url_input, cookie_input],
+            outputs=[url_log_output, input_files, cookie_input, user_notes], # Added user_notes as output
         )
         
+        # cookie handling via LocalStorage (Client-side only)
+        js_save_cookie = """
+        (val) => {
+            if (val) {
+                localStorage.setItem("video2md_douyin_cookie", val);
+            }
+            return val;
+        }
+        """
+
+        # Save cookie to LocalStorage when changed
+        cookie_input.input(None, inputs=[cookie_input], js=js_save_cookie)
+
         # URL input platform detection (on change)
         def on_url_change(url: str):
-            
             if DOWNLOADERS_AVAILABLE:
                 platform = detect_platform(url)
                 if platform:
                     platform_name = SUPPORTED_PLATFORMS.get(platform, platform.value)
-                    return gr.update(value=f"✅ **Platform**: {platform_name}", visible=True)
+                    
+                    # Logic:
+                    # 1. If platform is Douyin/TikTok, show cookie input
+                    # 2. Cookie value is loaded from LocalStorage via JS side-effect
+                    
+                    is_douyin_tiktok = platform in (Platform.DOUYIN, Platform.TIKTOK)
+                    
+                    return (
+                        gr.update(value=f"✅ **Platform**: {platform_name}", visible=True),
+                        gr.update(visible=is_douyin_tiktok),
+                    )
                 else:
-                    return gr.update(value="⚠️ **Unsupported platform**", visible=True)
+                    return (
+                        gr.update(value="⚠️ **Unsupported platform**", visible=True),
+                        gr.update(visible=False),
+                    )
             else:
-                return gr.update(value="⚠️ **Downloaders not available**", visible=True)
+                return (
+                    gr.update(value="⚠️ **Downloaders not available**", visible=True),
+                    gr.update(visible=False),
+                )
         
-        url_input.change(on_url_change, inputs=[url_input], outputs=[detected_platform])
+        # When URL changes:
+        # 1. Detect platform (Python) -> Show/Hide Cookie Input
+        # 2. Load cookie from LocalStorage (JS) -> Fill Cookie Input
+        
+        js_load_cookie_if_needed = """
+        (url) => {
+            // Simple heuristic to avoid overwriting if not Douyin/TikTok
+            if (url.includes('douyin') || url.includes('tiktok')) {
+                return localStorage.getItem("video2md_douyin_cookie") || "";
+            }
+            return "";
+        }
+        """
+
+        url_input.change(
+            on_url_change, 
+            inputs=[url_input], 
+            outputs=[detected_platform, cookie_input]
+        ).then(
+            None, 
+            inputs=[url_input], 
+            outputs=[cookie_input],
+            js=js_load_cookie_if_needed
+        )
 
         # Timer: background refresh for input list to reduce manual refresh actions
         def _auto_refresh_inputs():

@@ -21,9 +21,12 @@ Transform your video bookmarks from a digital graveyard into a searchable knowle
 
 ### Input: Any Video File
 
-- Drop in MP4, AVI, MOV, or any common video format
+- **Local Files**: Drop in MP4, AVI, MOV, or any common video format
+- **Video URLs**: Direct download from supported platforms:
+  - 📺 **YouTube**
+  - 📺 **Bilibili**
+  - 🎵 **TikTok / Douyin** (Cookies stored securely in your browser)
 - Supports batch processing of multiple files
-- Works with audio files too (MP3, WAV, FLAC, etc.)
 
 ### Output: Rich Markdown Documents
 
@@ -32,6 +35,7 @@ For each video `example.mp4`, you get a complete folder `output/example/` contai
 - 📄 **`example.md`** - Structured summary with embedded video player
 - 📝 **`example.txt`** - Clean transcript text
 - 🎞️ **`example.srt`** - Subtitle file with timestamps
+- 📊 **`example.json`** - Metadata and trace information
 
 ### Sample Output Preview
 
@@ -129,10 +133,13 @@ The easiest way to use Video2MD is through the web interface:
 5. **Use the Web Interface**:
 
    - Open your browser to the displayed URL (usually http://localhost:7860)
-   - Upload videos or select existing files
-   - **Choose transcription method** (Local Whisper or OpenAI Transcription)
-   - Click "Go" to process
-   - Preview results instantly in the browser
+   - **Download Video**: Use the "Video URL" tab to download from YouTube/Bilibili/TikTok.
+     - Enter the **Topic Name** (folder name) and **URL**.
+     - Provides logs and progress updates.
+   - **Process**: Select files from the input list.
+   - **Choose transcription method** (Local Whisper or OpenAI Transcription).
+   - Click "Go" to process.
+   - Preview results instantly in the browser.
 
 ### Option 2: Command Line
 
@@ -156,34 +163,60 @@ uv run python main.py
 # Results appear in output/your-video/
 ```
 
-## 🤖 How It Works: The AI Agent Pipeline
+## 🏗️ Technical Architecture
 
-Video2MD uses three specialized AI agents working together:
+Video2MD is built on a modern stack designed for performance, modularity, and extensibility.
 
-### 1. 🎧 Whisper Agent - Transcription
+### Core Tech Stack
 
-- Supports **two transcription methods**:
-  - **Local Whisper** - Free, runs on your hardware using faster-whisper
-  - **OpenAI Transcription** - Cloud-based using gpt-4o-transcribe model
-- Converts video/audio to accurate text
-- Handles multiple languages and accents
-- Generates both clean text and timestamped subtitles
-- Supports Chinese simplified/traditional conversion
-- **Group ID tracing** - All agent operations for the same media file are grouped together for easy tracking
+| Component         | Technology                                                          | Purpose                                          |
+| ----------------- | ------------------------------------------------------------------- | ------------------------------------------------ |
+| **Framework**     | **Python 3.11+**                                                    | Core application logic and async runtime         |
+| **UI**            | [Gradio](https://www.gradio.app/)                                   | Interactive web interface                        |
+| **Video Engine**  | [yt-dlp](https://github.com/yt-dlp/yt-dlp)                          | High-performance video downloader                |
+| **Transcription** | `faster-whisper` / `gpt-4o`                                         | Local and cloud-based speech-to-text             |
+| **Orchestration** | [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) | Managed agent workflow and handoffs              |
+| **Protocol**      | [MCP (Model Context Protocol)](https://modelcontextprotocol.io/)    | Standardized tool access (FileSystem, WebSearch) |
 
-### 2. 🔍 Research Agent - Context Enhancement
+## 🤖 The AI Agent Pipeline
 
-- Searches the web for related information and context
-- Finds relevant articles, documentation, and references
-- Enriches the content with external knowledge
-- Handles timeouts gracefully for blocked/slow sites
+The core intelligence of Video2MD is powered by a **multi-agent system**. Specialized agents collaborate to process media, resembling a factory assembly line where each worker has a specific skill and toolset.
 
-### 3. ✍️ Summary Agent - Intelligent Structuring
+### Agent Workflow
 
-- Combines transcript and research into coherent summaries
-- Creates proper markdown structure with headings and sections
-- Embeds the original video for reference
-- Maintains context and key insights
+```text
+                                        +-------------------+
+                                        |    MCP Context    |
+                                        +-------------------+
+                                                 |
+[Video Input] -> [Whisper Agent] <----> [Filesystem Server]
+                       |
+                       v
+                 [Research Agent] <---> [Web Search Server]
+                       |
+                       v
+                 [Summary Agent]  <---> [Filesystem Server]
+                       |
+                       v
+               [Markdown Output]
+```
+
+### 1. 🎧 Whisper Agent (Transcription)
+
+- **Role**: Converts audio to text using either local GPU/CPU resources or OpenAI's API.
+- **MCP Integration**: Uses the `filesystem` MCP server to read media files and write SRT/TXT output safely.
+- **Features**: Speaker diarization, timestamp alignment, and multi-language support.
+
+### 2. 🔍 Research Agent (Context Enhancement)
+
+- **Role**: Analyzes the transcript to find ambiguous terms, technical concepts, or missing context.
+- **MCP Integration**: connects to `brave-search` or `google-search` MCP servers to query external knowledge bases.
+- **Intelligence**: Autonomously formulates search queries based on transcript content without user intervention.
+
+### 3. ✍️ Summary Agent (Synthesis)
+
+- **Role**: Synthesizes the raw transcript and research notes into a cohesive document.
+- **Output**: Generates a standard Markdown file with clear headers, bullet points, and an embedded video player.
 
 ### Processing Flow
 
