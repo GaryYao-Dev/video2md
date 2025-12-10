@@ -93,6 +93,7 @@ class LocalDownloader(Downloader):
         download_video: bool = True,
         download_audio: bool = False,
         progress_hook: Optional[callable] = None,
+        cookie: Optional[str] = None,
     ) -> DownloadResult:
         """
         "Download" a local file by copying it to the output directory.

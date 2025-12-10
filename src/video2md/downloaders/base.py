@@ -126,6 +126,7 @@ class Downloader(ABC):
         download_video: bool = True,
         download_audio: bool = False,
         progress_hook: Optional[callable] = None,
+        cookie: Optional[str] = None,
     ) -> DownloadResult:
         """
         Download video from URL to the specified directory.
