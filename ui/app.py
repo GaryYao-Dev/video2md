@@ -53,6 +53,16 @@ try:
 except Exception:  # pragma: no cover - optional until UI is built
     gr = None  # Lazy import pattern to avoid hard dependency now
 
+# Import file operations components
+from components.file_operations import (
+    list_input_files,
+    list_output_folders,
+    create_file_operations_tab,
+    wire_file_operations_events,
+    create_refresh_function,
+    get_refresh_outputs,
+)
+
 # Ensure src/ is on sys.path when running from source tree
 import sys
 from pathlib import Path as _Path
@@ -345,47 +355,54 @@ def main():  # pragma: no cover - placeholder only
                         url_run_btn = gr.Button("Download to Input", variant="primary")
                         url_log_output = gr.Textbox(label="Download Logs", lines=2, max_lines=3, interactive=False)
 
-            # Center column 2: Settings & Logs
+            # Center column 2: Settings & Logs (now tabbed)
             with gr.Column(scale=1, min_width=280):
                 gr.Markdown("### Processing Settings")
                 
-                input_files = gr.CheckboxGroup(
-                    choices=_list_media_in_input(),
-                    label="Select media files",
-                )
-                
-                with gr.Row():
-                    transcribe_method = gr.Radio(
-                        choices=[
-                            ("Local Whisper (faster-whisper)", "local"),
-                            ("OpenAI Whisper API (whisper-1)", "openai"),
-                        ],
-                        value="openai",
-                        label="Transcription Method",
-                    )
+                with gr.Tabs() as settings_tabs:
+                    # Tab 1: Original Settings
+                    with gr.TabItem("⚙️ Settings", id="settings_tab"):
+                        input_files = gr.CheckboxGroup(
+                            choices=_list_media_in_input(),
+                            label="Select media files",
+                        )
+                        
+                        with gr.Row():
+                            transcribe_method = gr.Radio(
+                                choices=[
+                                    ("Local Whisper (faster-whisper)", "local"),
+                                    ("OpenAI Whisper API (whisper-1)", "openai"),
+                                ],
+                                value="openai",
+                                label="Transcription Method",
+                            )
 
-                    prompt_select = gr.Dropdown(
-                        choices=[
-                            "github_project",
-                            "general",
-                            "tutorial",
-                            "review_analysis",
-                        ],
-                        value="github_project",
-                        label="Research prompt",
-                        allow_custom_value=False,
-                    )
+                            prompt_select = gr.Dropdown(
+                                choices=[
+                                    "github_project",
+                                    "general",
+                                    "tutorial",
+                                    "review_analysis",
+                                ],
+                                value="github_project",
+                                label="Research prompt",
+                                allow_custom_value=False,
+                            )
 
-                user_notes = gr.Textbox(
-                    lines=4,
-                    label="User notes (optional)",
-                    info="Add author comments, product model numbers, repo URLs, or any hints to bias research.",
-                )
-                
-                run_btn = gr.Button("Go", variant="primary")
-                
-                log_output = gr.Textbox(
-                    lines=18, label="Logs", interactive=False)
+                        user_notes = gr.Textbox(
+                            lines=4,
+                            label="User notes (optional)",
+                            info="Add author comments, product model numbers, repo URLs, or any hints to bias research.",
+                        )
+                        
+                        run_btn = gr.Button("Go", variant="primary")
+                        
+                        log_output = gr.Textbox(
+                            lines=18, label="Logs", interactive=False)
+                    
+                    # Tab 2: Files Operations
+                    with gr.TabItem("📂 Files", id="files_tab"):
+                        file_ops_components = create_file_operations_tab()
 
             # Center column 3: Markdown/TXT/SRT selection + preview (tabbed)
             with gr.Column(scale=3):
@@ -393,19 +410,18 @@ def main():  # pragma: no cover - placeholder only
                 # Get initial basenames and set default value to first item if available
                 initial_basenames = _list_basenames()
                 initial_value = initial_basenames[0] if initial_basenames else None
-                # Select filename, Download folder and trace link in the same row
+                # Select filename, Download folder and trace link
                 with gr.Row():
                     base_list = gr.Dropdown(
                         choices=initial_basenames, 
                         value=initial_value,
                         label="Select filename",
                         scale=3)
-                    folder_download = gr.File(
-                        label="Download Folder", visible=False, interactive=False, scale=2)
-                    trace_link = gr.HTML(
-                        value="",
-                        visible=False
-                    )
+                    with gr.Column(scale=1):
+                        folder_download = gr.DownloadButton(
+                            "⬇️ Download Folder", visible=False, size="sm")
+                        trace_btn = gr.Button(
+                            "🔍 View Trace", visible=False, size="sm")
                 # Responsive player style (limit height, fit width)
                 gr.HTML("""
                 <style>
@@ -559,7 +575,7 @@ def main():  # pragma: no cover - placeholder only
                 
                 # Check if trace_id exists in JSON
                 json_path = base_dir / f"{basename}.json"
-                trace_html = ""
+                trace_id = None
                 trace_visible = False
                 if json_path.exists():
                     try:
@@ -567,36 +583,13 @@ def main():  # pragma: no cover - placeholder only
                             json_data = json.load(f)
                         trace_id = json_data.get('trace_id')
                         if trace_id:
-                            url = f"https://platform.openai.com/logs/trace?trace_id={trace_id}"
-                            trace_html = f'''
-                            <div style="display: flex; align-items: center; height: 100%; padding-top: 24px;">
-                                <button onclick="window.open('{url}', '_blank')" 
-                                    style="
-                                        background-color: #fff0dd;
-                                        color: #ff6e00;
-                                        border: 1px solid #ffd9b3;
-                                        padding: 8px 12px;
-                                        border-radius: 8px;
-                                        cursor: pointer;
-                                        font-size: 13px;
-                                        font-weight: 500;
-                                        white-space: nowrap;
-                                        transition: all 0.2s;
-                                    "
-                                    onmouseover="this.style.backgroundColor='#ffe4c4'; this.style.borderColor='#ffb366'"
-                                    onmouseout="this.style.backgroundColor='#fff0dd'; this.style.borderColor='#ffd9b3'"
-                                >
-                                    🔍 View Trace
-                                </button>
-                            </div>
-                            '''
                             trace_visible = True
                     except:
                         pass
             else:
                 md_display, media_path, txt_text, srt_text = "", None, "", ""
                 zip_path, folder_visible = None, False
-                trace_html = ""
+                trace_id = None
                 trace_visible = False
             
             # Update dropdown choices dynamically
@@ -613,15 +606,54 @@ def main():  # pragma: no cover - placeholder only
                 gr.update(value=txt_text),
                 gr.update(value=srt_text),
                 gr.update(value=zip_path, visible=folder_visible),
-                gr.update(value=trace_html, visible=trace_visible),
+                gr.update(visible=trace_visible),
             )
 
         base_list.change(_load_all_previews, inputs=base_list,
-                         outputs=[base_list, md_preview, md_video, txt_code, srt_code, folder_download, trace_link])
+                         outputs=[base_list, md_preview, md_video, txt_code, srt_code, folder_download, trace_btn])
 
         # Initialize preview on page load if there's a default selection
         demo.load(_load_all_previews, inputs=base_list,
-                  outputs=[base_list, md_preview, md_video, txt_code, srt_code, folder_download, trace_link])
+                  outputs=[base_list, md_preview, md_video, txt_code, srt_code, folder_download, trace_btn])
+
+        # Trace button click handler - opens trace URL in new tab
+        def get_trace_url(basename: str) -> str:
+            if not basename:
+                return None
+            json_path = OUTPUT_DIR / basename / f"{basename}.json"
+            if json_path.exists():
+                try:
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        json_data = json.load(f)
+                    trace_id = json_data.get('trace_id')
+                    if trace_id:
+                        return f"https://platform.openai.com/logs/trace?trace_id={trace_id}"
+                except:
+                    pass
+            return None
+        
+        trace_btn.click(
+            get_trace_url,
+            inputs=[base_list],
+            outputs=[],
+            js="(basename) => { fetch('/get_trace_url?basename=' + basename).then(r => r.text()).then(url => { if(url) window.open(url, '_blank'); }); }"
+        )
+
+        # Wire file operations events (connects to input_files checkbox and base_list dropdown)
+        wire_file_operations_events(
+            file_ops_components,
+            external_input_files_component=input_files,
+            external_base_list_component=base_list,
+        )
+
+        # Refresh Files tab dropdowns on page load (same pattern as Preview section)
+        refresh_files = create_refresh_function(file_ops_components)
+        if refresh_files:
+            demo.load(
+                refresh_files,
+                outputs=get_refresh_outputs(file_ops_components),
+            )
+
 
         # Run pipeline for selected inputs only
         async def on_run(selected: List[str], transcribe_method: str, prompt_variant: str, notes: str):
