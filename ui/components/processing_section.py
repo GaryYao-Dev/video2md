@@ -30,7 +30,9 @@ from .file_operations import (
 
 # Import orchestrators from the main app
 try:
-    from video2md.agents import whisper_host, research_host, summarize_host
+    from video2md.agents.whisper_host import whisper_host
+    from video2md.agents.research_host import research_host
+    from video2md.agents.summarize_host import summarize_host
     from agents import trace
     ORCHESTRATORS_AVAILABLE = True
 except ImportError:
